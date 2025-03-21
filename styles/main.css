@@ -1,0 +1,333 @@
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Poppins:wght@400;600&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #0a0a0a;
+    color: #e0e0e0;
+    overflow: hidden;
+}
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#game-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+#ui-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 20px;
+    z-index: 2;
+}
+
+#game-status {
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    display: flex;
+    gap: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+    width: fit-content;
+}
+
+#gold, #lives, #wave {
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+}
+
+#gold::before {
+    content: "💰";
+    margin-right: 8px;
+}
+
+#lives::before {
+    content: "❤️";
+    margin-right: 8px;
+}
+
+#wave::before {
+    content: "🌊";
+    margin-right: 8px;
+}
+
+#tower-selection {
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: absolute;
+    top: 80px;
+    left: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    width: 220px;
+}
+
+.tower-option {
+    padding: 10px 15px;
+    background-color: #222222;
+    border: 2px solid #333333;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+}
+
+.tower-option::before {
+    font-family: monospace;
+    padding: 3px 8px;
+    background-color: #4CAF50;
+    border-radius: 4px;
+    color: #000;
+    margin-right: 10px;
+}
+
+.tower-option[data-tower="arrow"]::before {
+    content: "1";
+}
+
+.tower-option[data-tower="doubleArrow"]::before {
+    content: "2";
+}
+
+.tower-option[data-tower="cannon"]::before {
+    content: "3";
+}
+
+.tower-option:hover {
+    background-color: #333333;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.tower-option.selected {
+    background-color: #4CAF50;
+    color: #000;
+    border-color: #2E7D32;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5);
+}
+
+.tower-selection-title {
+    font-family: 'Bangers', cursive;
+    color: #4CAF50;
+    font-size: 1.5rem;
+    text-align: center;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.tower-instructions {
+    font-size: 0.8rem;
+    color: #aaa;
+    text-align: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #444;
+}
+
+#power-cards {
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    display: flex;
+    gap: 15px;
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.power-card {
+    width: 100px;
+    height: 130px;
+    background-color: #222222;
+    border: 2px solid #333333;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 10px;
+    font-size: 0.9rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.power-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 40px;
+    background: linear-gradient(to bottom, #4CAF50, transparent);
+    opacity: 0.5;
+}
+
+.power-card::after {
+    content: attr(data-cost) + "g";
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    font-size: 0.8rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 2px 6px;
+    border-radius: 10px;
+    color: gold;
+}
+
+.power-card:hover {
+    background-color: #333333;
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(76, 175, 80, 0.3);
+}
+
+.power-card.cooldown {
+    background-color: #222222;
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+    box-shadow: none;
+}
+
+.power-card.cooldown::before {
+    background: linear-gradient(to bottom, #666, transparent);
+}
+
+.card-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+}
+
+#game-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: 10;
+}
+
+#start-screen, #end-screen {
+    background-color: #121212;
+    padding: 40px;
+    border-radius: 15px;
+    text-align: center;
+    border: 3px solid #4CAF50;
+    box-shadow: 0 0 30px rgba(76, 175, 80, 0.5);
+    max-width: 500px;
+    width: 90%;
+}
+
+#start-screen h1, #end-screen h1 {
+    font-family: 'Bangers', cursive;
+    margin-bottom: 30px;
+    color: #4CAF50;
+    font-size: 3rem;
+    text-shadow: 3px 3px 5px rgba(0, 0, 0, 0.7);
+    letter-spacing: 2px;
+}
+
+#username {
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    width: 100%;
+    border-radius: 8px;
+    border: 2px solid #333;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.3s ease;
+}
+
+#username:focus {
+    border-color: #4CAF50;
+    outline: none;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+}
+
+button {
+    padding: 12px 30px;
+    background-color: #4CAF50;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 0 #2E7D32;
+    position: relative;
+    top: 0;
+}
+
+button:hover {
+    background-color: #66BB6A;
+    box-shadow: 0 6px 0 #2E7D32;
+    transform: translateY(-2px);
+}
+
+button:active {
+    box-shadow: 0 0 0 #2E7D32;
+    transform: translateY(4px);
+}
+
+.hidden {
+    display: none !important;
+}
+
+#score-display {
+    margin: 20px 0;
+    font-size: 1.2rem;
+    color: #4CAF50;
+}
+
+/* For keypress hints */
+.key-hint {
+    display: inline-block;
+    background-color: #333;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 0 3px;
+    font-family: monospace;
+    font-size: 0.9em;
+    border: 1px solid #555;
+}

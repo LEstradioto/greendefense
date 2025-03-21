@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Defense - Green Defense</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { margin: 0; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-container">
+            <div id="game-status">
+                <div id="gold">Gold: <span id="gold-amount">100</span></div>
+                <div id="lives">Lives: <span id="lives-amount">20</span></div>
+                <div id="wave">Wave: <span id="wave-number">1</span>/3</div>
+            </div>
+            <div id="tower-selection">
+                <div class="tower-selection-title">Towers</div>
+                <div class="tower-option" data-tower="arrow" data-cost="10">Arrow Tower <span>10g</span></div>
+                <div class="tower-option" data-tower="doubleArrow" data-cost="25">Double Arrow <span>25g</span></div>
+                <div class="tower-option" data-tower="cannon" data-cost="50">Cannon <span>50g</span></div>
+                <div class="tower-instructions">
+                    Select tower then click on map to place<br>
+                    Or press <span class="key-hint">1</span>, <span class="key-hint">2</span> or <span class="key-hint">3</span> keys
+                </div>
+            </div>
+            <div id="power-cards">
+                <div class="power-card" data-card="meteor" data-cost="100">
+                    <div class="card-icon">☄️</div>
+                    Meteor Strike
+                </div>
+                <div class="power-card" data-card="freeze" data-cost="80">
+                    <div class="card-icon">❄️</div>
+                    Freeze Wave
+                </div>
+                <div class="power-card" data-card="hero" data-cost="150">
+                    <div class="card-icon">🦸</div>
+                    Summon Hero
+                </div>
+                <div class="power-card" data-card="gold" data-cost="0">
+                    <div class="card-icon">💰</div>
+                    Gold Rush
+                </div>
+                <div class="power-card" data-card="empower" data-cost="120">
+                    <div class="card-icon">⚡</div>
+                    Empower
+                </div>
+            </div>
+        </div>
+        <div id="game-overlay">
+            <div id="start-screen">
+                <h1>Green Defense</h1>
+                <input type="text" id="username" placeholder="Enter your username">
+                <button id="start-button">Start Game</button>
+            </div>
+            <div id="end-screen" class="hidden">
+                <h1 id="result-message"></h1>
+                <div id="score-display"></div>
+                <button id="restart-button">Play Again</button>
+            </div>
+        </div>
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
