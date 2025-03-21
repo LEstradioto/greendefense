@@ -15,7 +15,10 @@ console.log('Three.js version:', THREE.REVISION);
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
     window.game = new Game(canvas);
+    
+    // Create UI and store it in the game
     window.ui = new UI(window.game);
+    window.game.ui = window.ui;
 
     // Setup the start button event listener
     document.getElementById('start-button').addEventListener('click', async () => {

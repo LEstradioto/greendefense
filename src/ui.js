@@ -4,6 +4,8 @@ export class UI {
         this.selectedTower = null;
         this.towerPreviewMesh = null;
         this.isValidPlacement = false;
+        this.towerPlacementCallback = null;
+        this.isTowerPlacementMode = false;
 
         // Cache elements
         this.towerOptions = document.querySelectorAll('.tower-option');
@@ -101,6 +103,12 @@ export class UI {
             this.game.renderer.removeTowerPreview();
             this.towerPreviewMesh = null;
         }
+        
+        // Exit TCG placement mode if active
+        if (this.isTowerPlacementMode && this.towerPlacementCallback) {
+            this.towerPlacementCallback(false);
+            this.setTowerPlacementMode(false);
+        }
     }
 
     async updateTowerPreview(normalizedX, normalizedY) {
@@ -176,18 +184,31 @@ export class UI {
 
         // Attempt to place tower
         if (this.isValidPlacement) {
-            const success = await this.game.placeTower(this.selectedTower, gridX, gridY);
-
-            if (success) {
-                // Tower placed successfully
-                // Reset selection
-                this.cancelTowerPlacement();
-                console.log("Tower placement successful, selection reset");
+            // Check if we're in TCG tower placement mode
+            if (this.isTowerPlacementMode && this.towerPlacementCallback) {
+                // Use TCG placement callback
+                this.towerPlacementCallback(true, { x: gridX, y: gridY });
+                console.log("TCG tower placement callback called");
             } else {
-                console.log("Tower placement failed in game.placeTower");
+                // Normal tower placement
+                const success = await this.game.placeTower(this.selectedTower, gridX, gridY);
+                
+                if (success) {
+                    // Tower placed successfully
+                    // Reset selection
+                    this.cancelTowerPlacement();
+                    console.log("Tower placement successful, selection reset");
+                } else {
+                    console.log("Tower placement failed in game.placeTower");
+                }
             }
         } else {
             console.log("Invalid placement location");
+            
+            // If we're in TCG mode, call the callback with failure
+            if (this.isTowerPlacementMode && this.towerPlacementCallback) {
+                this.towerPlacementCallback(false);
+            }
         }
     }
 
@@ -221,5 +242,38 @@ export class UI {
         }
 
         return success;
+    }
+    
+    // Method for TCG integration - enables tower placement mode for cards
+    setTowerPlacementMode(enabled, callback = null) {
+        this.isTowerPlacementMode = enabled;
+        this.towerPlacementCallback = callback;
+        
+        if (enabled) {
+            // Show visual cue that tower placement mode is active
+            document.body.classList.add('tower-placement-mode');
+            
+            // For now, we'll use the existing tower preview system
+            // But in the future, we might want to create a special preview for TCG towers
+            if (!this.selectedTower && this.game.tcgIntegration?.selectedCard) {
+                // Use a generic tower preview for now
+                this.selectedTower = 'custom';
+                this.towerPreviewMesh = this.game.renderer.createTowerPreview('arrow');
+            }
+        } else {
+            // Remove visual cue
+            document.body.classList.remove('tower-placement-mode');
+            
+            // Only clear if we're in TCG mode, to avoid interfering with normal tower placement
+            if (this.selectedTower === 'custom') {
+                this.selectedTower = null;
+                
+                // Remove tower preview
+                if (this.towerPreviewMesh) {
+                    this.game.renderer.removeTowerPreview();
+                    this.towerPreviewMesh = null;
+                }
+            }
+        }
     }
 }

@@ -1,12 +1,22 @@
+import { ElementTypes, ElementStyles, ElementEffects } from '../../elements.js';
+
 export class Enemy {
-    constructor(game, type, startPosition) {
+    constructor(game, type, startPosition, element = ElementTypes.NEUTRAL, stats = null) {
         this.game = game;
         this.type = type;
         this.position = { ...startPosition };
         this.position.y = 0.3; // Slight offset from ground
+        this.element = element;
 
-        // Set stats based on enemy type
-        this.setStats();
+        // Set stats based on enemy type or from provided stats (for card-based enemies)
+        if (stats) {
+            this.health = stats.health || 100;
+            this.maxHealth = stats.health || 100;
+            this.baseSpeed = stats.speed || 3;
+            this.reward = stats.reward || 10;
+        } else {
+            this.setStats();
+        }
 
         // Enemy state
         this.currentPathIndex = 0;
@@ -22,9 +32,9 @@ export class Enemy {
 
         // Movement and effects
         this.speed = this.baseSpeed;
-        this.slowEffect = false;
-        this.slowFactor = 1;
-        this.slowEndTime = 0;
+        
+        // Status effects
+        this.statusEffects = [];
 
         // Create 3D representation
         this.mesh = this.game.renderer.createEnemy(this);
@@ -45,6 +55,7 @@ export class Enemy {
                 this.maxHealth = 100;
                 this.baseSpeed = 3; // Units per second
                 this.reward = 10;
+                this.element = ElementTypes.NEUTRAL;
                 break;
 
             case 'elephant':
@@ -52,6 +63,7 @@ export class Enemy {
                 this.maxHealth = 250;
                 this.baseSpeed = 1.5; // Units per second
                 this.reward = 25;
+                this.element = ElementTypes.EARTH;
                 break;
 
             case 'pirate':
@@ -59,6 +71,48 @@ export class Enemy {
                 this.maxHealth = 400;
                 this.baseSpeed = 1; // Units per second
                 this.reward = 50;
+                this.element = ElementTypes.WATER;
+                break;
+                
+            // Elemental enemy types
+            case 'fire_imp':
+                this.health = 80;
+                this.maxHealth = 80;
+                this.baseSpeed = 4; // Fast
+                this.reward = 15;
+                this.element = ElementTypes.FIRE;
+                break;
+                
+            case 'water_elemental':
+                this.health = 150;
+                this.maxHealth = 150;
+                this.baseSpeed = 2;
+                this.reward = 20;
+                this.element = ElementTypes.WATER;
+                break;
+                
+            case 'earth_golem':
+                this.health = 300;
+                this.maxHealth = 300;
+                this.baseSpeed = 1;
+                this.reward = 30;
+                this.element = ElementTypes.EARTH;
+                break;
+                
+            case 'air_wisp':
+                this.health = 50;
+                this.maxHealth = 50;
+                this.baseSpeed = 5; // Very fast
+                this.reward = 25;
+                this.element = ElementTypes.AIR;
+                break;
+                
+            case 'shadow_wraith':
+                this.health = 200;
+                this.maxHealth = 200;
+                this.baseSpeed = 2.5;
+                this.reward = 35;
+                this.element = ElementTypes.SHADOW;
                 break;
 
             default:
@@ -66,19 +120,16 @@ export class Enemy {
                 this.maxHealth = 100;
                 this.baseSpeed = 3;
                 this.reward = 10;
+                this.element = ElementTypes.NEUTRAL;
         }
     }
 
     update(deltaTime) {
         // Check if reached the end
         if (this.reachedEnd) return;
-
-        // Check if slow effect has ended
-        if (this.slowEffect && performance.now() > this.slowEndTime) {
-            this.slowEffect = false;
-            this.slowFactor = 1;
-            this.speed = this.baseSpeed;
-        }
+        
+        // Update status effects
+        this.updateStatusEffects(deltaTime);
 
         // Periodically recalculate path to account for new tower placements
         const now = performance.now();
@@ -104,6 +155,73 @@ export class Enemy {
             const healthPercent = this.health / this.maxHealth;
             this.game.renderer.updateHealthBar(this.healthBar, healthPercent);
         }
+    }
+    
+    updateStatusEffects(deltaTime) {
+        // Process all active status effects
+        for (let i = this.statusEffects.length - 1; i >= 0; i--) {
+            const effect = this.statusEffects[i];
+            
+            // Reduce remaining duration
+            effect.remainingDuration -= deltaTime;
+            
+            // Process effect based on type
+            switch (effect.type) {
+                case 'burn':
+                    // Apply periodic damage from burn
+                    effect.timeSinceLastTick += deltaTime;
+                    if (effect.timeSinceLastTick >= effect.tickInterval) {
+                        this.takeDamage(effect.damagePerTick, true); // true = from DOT effect
+                        effect.timeSinceLastTick = 0;
+                        
+                        // Create burn visual
+                        this.createBurnEffect();
+                    }
+                    break;
+                    
+                case 'slow':
+                    // Speed reduction is applied when calculating movement speed
+                    // Visual effect is handled when the effect is applied
+                    break;
+                    
+                case 'weaken':
+                    // Damage reduction is applied when taking damage
+                    break;
+            }
+            
+            // Remove expired effects
+            if (effect.remainingDuration <= 0) {
+                // Handle cleanup when effect expires
+                if (effect.type === 'slow') {
+                    // Remove slow effect visual
+                    if (this.mesh && this.mesh.userData.slowEffect) {
+                        this.mesh.remove(this.mesh.userData.slowEffect);
+                        delete this.mesh.userData.slowEffect;
+                    }
+                }
+                
+                // Remove the effect
+                this.statusEffects.splice(i, 1);
+            }
+        }
+        
+        // Recalculate current speed after all effects
+        this.calculateCurrentSpeed();
+    }
+    
+    calculateCurrentSpeed() {
+        // Start with base speed
+        let currentSpeed = this.baseSpeed;
+        
+        // Apply all slow effects (they stack multiplicatively)
+        for (const effect of this.statusEffects) {
+            if (effect.type === 'slow') {
+                currentSpeed *= effect.speedModifier;
+            }
+        }
+        
+        // Set the current speed
+        this.speed = currentSpeed;
     }
 
     followPath(deltaTime) {
@@ -155,7 +273,7 @@ export class Enemy {
         direction.z /= distance;
 
         // Move towards waypoint
-        const moveSpeed = this.speed * this.slowFactor * deltaTime;
+        const moveSpeed = this.speed * deltaTime;
         const moveDistance = Math.min(moveSpeed, distance);
 
         // Update position
@@ -192,14 +310,70 @@ export class Enemy {
         return validPosition;
     }
 
-    takeDamage(amount) {
-        this.health -= amount;
+    takeDamage(amount, isFromEffect = false) {
+        // Apply damage reduction from weaken effect
+        let actualDamage = amount;
+        
+        // Apply damage modifiers from status effects
+        for (const effect of this.statusEffects) {
+            if (effect.type === 'weaken') {
+                actualDamage *= effect.damageModifier;
+            }
+        }
+        
+        // Apply damage
+        this.health -= actualDamage;
 
         // Ensure health doesn't go below 0
         if (this.health < 0) this.health = 0;
 
-        // Create hit effect
-        this.createHitEffect();
+        // Create hit effect if not from a DOT effect (to avoid visual spam)
+        if (!isFromEffect) {
+            this.createHitEffect(actualDamage);
+        }
+    }
+    
+    applyStatusEffect(effectType, effectParams) {
+        // Check if this enemy already has this effect type
+        const existingEffectIndex = this.statusEffects.findIndex(effect => effect.type === effectType);
+        
+        if (existingEffectIndex !== -1) {
+            // If effect exists, just refresh duration
+            this.statusEffects[existingEffectIndex].remainingDuration = Math.max(
+                this.statusEffects[existingEffectIndex].remainingDuration,
+                effectParams.duration
+            );
+        } else {
+            // Add new effect
+            const newEffect = {
+                type: effectType,
+                remainingDuration: effectParams.duration,
+                ...effectParams
+            };
+            
+            // Add additional properties based on effect type
+            switch (effectType) {
+                case 'burn':
+                    newEffect.timeSinceLastTick = 0;
+                    this.createBurnEffectVisual();
+                    break;
+                    
+                case 'slow':
+                    this.createSlowEffectVisual(effectParams.duration);
+                    break;
+                    
+                case 'weaken':
+                    this.createWeakenEffectVisual(effectParams.duration);
+                    break;
+            }
+            
+            this.statusEffects.push(newEffect);
+        }
+        
+        // Update speed immediately if it's a slow effect
+        if (effectType === 'slow') {
+            this.calculateCurrentSpeed();
+        }
     }
 
     // Method to recalculate the path when a tower is placed
@@ -215,11 +389,23 @@ export class Enemy {
         await this.calculatePath(0); // Start with recursion depth 0
     }
 
-    createHitEffect() {
-        // Simple hit effect
+    createHitEffect(damageAmount) {
+        if (!this.game.renderer || !this.mesh) return;
+        
+        // Get color based on element
+        let color = 0xFF0000; // Default red
+        
+        // Choose a different color for critical hits
+        const isCritical = Math.random() < 0.1; // 10% chance for visual variation
+        
+        if (isCritical) {
+            color = 0xFFFF00; // Yellow for crits
+        }
+        
+        // Create hit effect
         const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8);
         const hitMaterial = new THREE.MeshBasicMaterial({
-            color: 0xFF0000,
+            color: color,
             transparent: true,
             opacity: 0.7
         });
@@ -229,8 +415,60 @@ export class Enemy {
         hitEffect.position.y += 0.5; // Position above enemy
 
         this.game.renderer.scene.add(hitEffect);
+        
+        // Optional: Display damage number
+        if (this.game.debugMode) {
+            const damageText = Math.round(damageAmount).toString();
+            
+            // Create text sprite
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 64;
+            canvas.height = 32;
+            
+            context.font = 'Bold 24px Arial';
+            context.fillStyle = isCritical ? 'yellow' : 'white';
+            context.textAlign = 'center';
+            context.fillText(damageText, 32, 24);
+            
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            
+            const spriteMaterial = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true
+            });
+            
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.copy(hitEffect.position);
+            sprite.position.y += 0.3;
+            sprite.scale.set(0.5, 0.25, 1);
+            
+            this.game.renderer.scene.add(sprite);
+            
+            // Animate damage text upward
+            const startY = sprite.position.y;
+            
+            const animateText = () => {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                if (progress < 1) {
+                    sprite.position.y = startY + progress * 0.5;
+                    spriteMaterial.opacity = 1 - progress;
+                    
+                    requestAnimationFrame(animateText);
+                } else {
+                    this.game.renderer.scene.remove(sprite);
+                }
+            };
+            
+            const startTime = performance.now();
+            const duration = 800; // 0.8 seconds
+            animateText();
+        }
 
-        // Animate and remove
+        // Animate and remove hit effect
         const startTime = performance.now();
         const duration = 300; // 0.3 seconds
 
@@ -253,33 +491,143 @@ export class Enemy {
 
         animate();
     }
-
-    applySlowEffect(slowAmount, duration) {
-        this.slowEffect = true;
-        this.slowFactor = 1 - slowAmount; // e.g. 0.5 for 50% slow
-        this.speed = this.baseSpeed * this.slowFactor;
-        this.slowEndTime = performance.now() + (duration * 1000);
-
-        // Visual effect for slow
-        if (this.mesh) {
-            // Add a blue glow to indicate slow effect
-            const slowGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-            const slowMaterial = new THREE.MeshBasicMaterial({
-                color: 0x00FFFF,
+    
+    createBurnEffect() {
+        if (!this.game.renderer || !this.mesh) return;
+        
+        // Create a small flame particle
+        const flameGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+        const flameMaterial = new THREE.MeshBasicMaterial({
+            color: ElementStyles[ElementTypes.FIRE].particleColor,
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        const flame = new THREE.Mesh(flameGeometry, flameMaterial);
+        
+        // Random position around the enemy
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 0.2 + Math.random() * 0.2;
+        flame.position.set(
+            this.mesh.position.x + Math.cos(angle) * radius,
+            this.mesh.position.y + 0.2 + Math.random() * 0.4,
+            this.mesh.position.z + Math.sin(angle) * radius
+        );
+        
+        this.game.renderer.scene.add(flame);
+        
+        // Animate flame rising and fading
+        const startTime = performance.now();
+        const duration = 500; // 0.5 seconds
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Rise up and fade out
+                flame.position.y += 0.01;
+                flameMaterial.opacity = 0.7 * (1 - progress);
+                
+                requestAnimationFrame(animate);
+            } else {
+                this.game.renderer.scene.remove(flame);
+            }
+        };
+        
+        animate();
+    }
+    
+    createBurnEffectVisual() {
+        // This creates the persistent burn effect visual when the status is first applied
+        if (!this.mesh) return;
+        
+        // Create a fire aura effect if it doesn't exist
+        if (!this.mesh.userData.burnEffect) {
+            const burnGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const burnMaterial = new THREE.MeshBasicMaterial({
+                color: ElementStyles[ElementTypes.FIRE].emissive,
                 transparent: true,
                 opacity: 0.3
             });
-
-            const slowEffect = new THREE.Mesh(slowGeometry, slowMaterial);
-            this.mesh.add(slowEffect);
-
-            // Remove slow effect when it ends
-            setTimeout(() => {
-                if (this.mesh) {
-                    this.mesh.remove(slowEffect);
+            
+            const burnEffect = new THREE.Mesh(burnGeometry, burnMaterial);
+            this.mesh.add(burnEffect);
+            
+            // Store reference
+            this.mesh.userData.burnEffect = burnEffect;
+            
+            // Animate pulsing
+            let startTime = performance.now();
+            
+            const animatePulse = () => {
+                if (!this.mesh || !this.mesh.userData.burnEffect) return;
+                
+                const time = performance.now() - startTime;
+                const scale = 1 + 0.2 * Math.sin(time * 0.005);
+                
+                burnEffect.scale.set(scale, scale, scale);
+                
+                // Check if the burn effect is still active
+                const hasBurnEffect = this.statusEffects.some(effect => effect.type === 'burn');
+                
+                if (hasBurnEffect) {
+                    requestAnimationFrame(animatePulse);
+                } else {
+                    // Remove effect when burn wears off
+                    this.mesh.remove(burnEffect);
+                    delete this.mesh.userData.burnEffect;
                 }
-            }, duration * 1000);
+            };
+            
+            animatePulse();
         }
+    }
+    
+    createSlowEffectVisual(duration) {
+        if (!this.mesh) return;
+        
+        // Remove existing slow effect if any
+        if (this.mesh.userData.slowEffect) {
+            this.mesh.remove(this.mesh.userData.slowEffect);
+        }
+        
+        // Create a blue aura to indicate slow effect
+        const slowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const slowMaterial = new THREE.MeshBasicMaterial({
+            color: ElementStyles[ElementTypes.WATER].color,
+            transparent: true,
+            opacity: 0.3,
+            wireframe: true
+        });
+        
+        const slowEffect = new THREE.Mesh(slowGeometry, slowMaterial);
+        this.mesh.add(slowEffect);
+        
+        // Store reference
+        this.mesh.userData.slowEffect = slowEffect;
+    }
+    
+    createWeakenEffectVisual(duration) {
+        if (!this.mesh) return;
+        
+        // Create a purple aura to indicate weaken effect
+        const weakenGeometry = new THREE.SphereGeometry(0.45, 16, 16);
+        const weakenMaterial = new THREE.MeshBasicMaterial({
+            color: ElementStyles[ElementTypes.SHADOW].color,
+            transparent: true,
+            opacity: 0.3
+        });
+        
+        const weakenEffect = new THREE.Mesh(weakenGeometry, weakenMaterial);
+        this.mesh.add(weakenEffect);
+        
+        // Remove effect after duration
+        setTimeout(() => {
+            if (this.mesh) {
+                this.mesh.remove(weakenEffect);
+            }
+        }, duration * 1000);
     }
 
     findExitPoint() {

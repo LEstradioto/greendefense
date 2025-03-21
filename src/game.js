@@ -3,6 +3,8 @@ import { Map } from './map.js';
 import { PowerCards } from './powerCards.js';
 import { Enemy } from './entities/enemy/index.js';
 import { Tower } from './entities/tower.js';
+import { TCGIntegration } from './tcg-integration.js';
+import { UI } from './ui.js';
 
 export class Game {
     constructor(canvas) {
@@ -28,6 +30,7 @@ export class Game {
         this.gameStarted = false;
         this.gameOver = false;
         this.debugMode = false;
+        this.isMultiplayer = false; // Will be used for TCG enemy cards
 
         // Game timing
         this.lastFrameTime = 0;
@@ -41,6 +44,9 @@ export class Game {
         // Bind methods
         this.update = this.update.bind(this);
         this.startWave = this.startWave.bind(this);
+        
+        // UI and TCG System will be initialized after map is ready
+        this.tcgIntegration = null;
     }
 
     async start(username) {
@@ -49,9 +55,20 @@ export class Game {
         this.gameOver = false;
         this.lastFrameTime = performance.now();
         await this.map.initialize();
+        
+        // Initialize TCG system
+        this.tcgIntegration = new TCGIntegration(this);
+        
+        // Initialize UI if it wasn't created yet (in case this was called directly)
+        if (!this.ui) {
+            this.ui = new UI(this);
+        }
 
         // Update UI
         this.updateUI();
+        
+        // Add CSS class for TCG integration
+        document.body.classList.add('tcg-enabled');
 
         // Start the game loop
         requestAnimationFrame(this.update);
@@ -90,6 +107,25 @@ export class Game {
         this.updateTowers();
         this.updateProjectiles();
         this.powerCards.update(this.deltaTime);
+        
+        // Update TCG system if initialized
+        if (this.tcgIntegration) {
+            // Check if it's time to regenerate mana
+            const now = performance.now();
+            if (now - this.tcgIntegration.lastManaRegenTime >= this.tcgIntegration.manaRegenInterval) {
+                // Regenerate mana if below max
+                if (this.tcgIntegration.mana < this.tcgIntegration.maxMana) {
+                    this.tcgIntegration.mana = Math.min(
+                        this.tcgIntegration.maxMana,
+                        this.tcgIntegration.mana + this.tcgIntegration.manaRegenAmount
+                    );
+                    // Update the UI
+                    this.tcgIntegration.updateManaDisplay();
+                }
+                // Reset timer
+                this.tcgIntegration.lastManaRegenTime = now;
+            }
+        }
 
         // Render the game
         this.renderer.render(this);
@@ -120,6 +156,12 @@ export class Game {
 
         // Update UI
         this.updateUI();
+        
+        // Give TCG rewards and start new turn if TCG system is active
+        if (this.tcgIntegration) {
+            // Start a new TCG turn (refresh mana, draw a card)
+            this.tcgIntegration.startTurn();
+        }
 
         // Check if all waves completed
         if (this.currentWave >= this.maxWaves) {
@@ -199,6 +241,20 @@ export class Game {
                 this.player.gold += enemy.reward;
                 this.player.score += enemy.reward;
                 this.enemiesDefeated++;
+                
+                // TCG mana bonus for special enemies
+                if (this.tcgIntegration && enemy.type.includes('elemental') || enemy.type.includes('golem')) {
+                    // Special enemy defeated - give mana bonus
+                    const manaBonus = 2;
+                    this.tcgIntegration.mana = Math.min(
+                        this.tcgIntegration.maxMana,
+                        this.tcgIntegration.mana + manaBonus
+                    );
+                    this.tcgIntegration.updateManaDisplay();
+                    
+                    // Visual effect for mana bonus
+                    this.createManaBonusEffect(enemy.position);
+                }
 
                 // Remove enemy mesh from scene
                 if (enemy.mesh) {
@@ -353,5 +409,84 @@ export class Game {
         const dx = pos2.x - pos1.x;
         const dz = pos2.z - pos1.z;
         return Math.sqrt(dx * dx + dz * dz);
+    }
+    
+    createManaBonusEffect(position) {
+        // Create a visual mana bonus effect at the given position
+        
+        // Skip if no renderer or TCG not enabled
+        if (!this.renderer || !this.tcgIntegration) return;
+        
+        // Create a mana orb effect
+        const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+        const orbMaterial = new THREE.MeshBasicMaterial({
+            color: 0x3498db, // Mana blue color
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const orb = new THREE.Mesh(orbGeometry, orbMaterial);
+        orb.position.set(position.x, position.y + 1, position.z);
+        
+        this.renderer.scene.add(orb);
+        
+        // Add text showing +2
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 64;
+        canvas.height = 32;
+        
+        context.font = 'Bold 24px Arial';
+        context.fillStyle = '#3498db';
+        context.textAlign = 'center';
+        context.fillText('+2', 32, 24);
+        
+        const texture = new THREE.Texture(canvas);
+        texture.needsUpdate = true;
+        
+        const spriteMaterial = new THREE.SpriteMaterial({ 
+            map: texture,
+            transparent: true
+        });
+        
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.position.set(position.x, position.y + 1.5, position.z);
+        sprite.scale.set(0.75, 0.375, 1);
+        
+        this.renderer.scene.add(sprite);
+        
+        // Animate and remove effect
+        const startTime = performance.now();
+        const duration = 1500; // 1.5 seconds
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Float upward
+                orb.position.y += 0.01;
+                sprite.position.y += 0.015;
+                
+                // Pulse size
+                const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 4);
+                orb.scale.set(scale, scale, scale);
+                
+                // Fade out at the end
+                if (progress > 0.7) {
+                    const fadeOutProgress = (progress - 0.7) / 0.3;
+                    orbMaterial.opacity = 0.8 * (1 - fadeOutProgress);
+                    spriteMaterial.opacity = 1 - fadeOutProgress;
+                }
+                
+                requestAnimationFrame(animate);
+            } else {
+                // Remove effect
+                this.renderer.scene.remove(orb);
+                this.renderer.scene.remove(sprite);
+            }
+        };
+        
+        animate();
     }
 }
