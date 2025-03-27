@@ -96,27 +96,6 @@ export class TCGIntegration {
                 }
             },
             {
-                id: 'hero_power',
-                name: 'Summon Hero',
-                type: 'spell',
-                rarity: CardRarity.EPIC,
-                element: ElementTypes.SHADOW,
-                cost: 0, // Uses gold instead of mana
-                goldCost: 150,
-                description: 'Summons a powerful hero to fight',
-                effect: 'hero',
-                duration: 10,
-                radius: 5,
-                getAdjustedStats: function() {
-                    return {
-                        effect: this.effect,
-                        duration: this.duration,
-                        radius: this.radius,
-                        element: this.element
-                    };
-                }
-            },
-            {
                 id: 'gold_power',
                 name: 'Gold Rush',
                 type: 'spell',
@@ -177,10 +156,13 @@ export class TCGIntegration {
                 transform: 'translateX(-50%)',
                 display: 'flex',
                 gap: '10px',
-                padding: '10px',
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                padding: '15px',
+                paddingTop: '25px', // Extra space at top for mana display
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
                 borderRadius: '10px',
-                zIndex: '1000'
+                zIndex: '1000',
+                boxShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
+                border: '2px solid #3498db' // Blue border to highlight it
             });
             
             // Add mana display
@@ -199,6 +181,9 @@ export class TCGIntegration {
             
             // Add to document
             document.body.appendChild(this.cardContainer);
+            
+            // Show the mana counter in the game status
+            document.getElementById('mana-counter').classList.remove('hidden');
         } else {
             this.cardContainer = document.getElementById('card-container');
         }
@@ -208,6 +193,7 @@ export class TCGIntegration {
     }
     
     updateManaDisplay() {
+        // Update the card mana display
         const manaDisplay = document.getElementById('mana-display');
         if (manaDisplay) {
             manaDisplay.textContent = `Mana: ${this.mana}/${this.maxMana}`;
@@ -221,6 +207,37 @@ export class TCGIntegration {
             } else {
                 // Remove regeneration indicator
                 manaDisplay.classList.remove('regenerating');
+            }
+            
+            // Add more prominent styling to make sure it's visible
+            Object.assign(manaDisplay.style, {
+                position: 'absolute',
+                top: '-30px',
+                left: '0',
+                color: '#3498db',
+                fontWeight: 'bold',
+                fontSize: '18px',
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                padding: '5px 10px',
+                borderRadius: '5px',
+                zIndex: '1001'
+            });
+        }
+        
+        // Update the header mana display
+        const manaAmount = document.getElementById('mana-amount');
+        const maxManaAmount = document.getElementById('max-mana-amount');
+        
+        if (manaAmount && maxManaAmount) {
+            // Check for infinite mana in debug mode
+            if (this.game.cardDebugMode && document.getElementById('debug-infinite-mana')?.checked) {
+                // Show infinity symbol for infinite mana
+                manaAmount.textContent = '∞';
+                maxManaAmount.textContent = '∞';
+                this.mana = this.absoluteMaxMana;
+            } else {
+                manaAmount.textContent = this.mana;
+                maxManaAmount.textContent = this.maxMana;
             }
         }
     }
@@ -338,10 +355,16 @@ export class TCGIntegration {
             flexDirection: 'column',
             padding: '5px',
             cursor: 'pointer',
-            transition: 'transform 0.2s',
+            transition: 'transform 0.2s, margin 0.3s',
             position: 'relative',
-            color: 'white'
+            color: 'white',
+            margin: '0 -5px' // Overlap cards slightly when many are present
         });
+        
+        // In debug mode with many cards, make them more compact
+        if (this.game.cardDebugMode) {
+            cardElement.style.margin = '0 -25px';
+        }
         
         // Card can be played condition
         let canPlay = false;
@@ -452,11 +475,23 @@ export class TCGIntegration {
         cardElement.addEventListener('mouseover', () => {
             if (canPlay) {
                 cardElement.style.transform = 'translateY(-10px)';
+                cardElement.style.zIndex = '10'; // Bring to front
+                
+                // In debug mode, increase spacing to see the card better
+                if (this.game.cardDebugMode) {
+                    cardElement.style.margin = '0 5px';
+                }
             }
         });
         
         cardElement.addEventListener('mouseout', () => {
             cardElement.style.transform = 'translateY(0)';
+            cardElement.style.zIndex = '1';
+            
+            // Reset margin in debug mode
+            if (this.game.cardDebugMode) {
+                cardElement.style.margin = '0 -25px';
+            }
         });
         
         // Add to container
@@ -572,11 +607,21 @@ export class TCGIntegration {
             // In the future, we'll need to create proper mappings between card IDs and tower types
             let towerType = 'arrow'; // Default type
             
-            // Map card's element to appropriate tower type
+            // Map card's element to appropriate tower type more accurately
+            // This determines what kind of tower we create based on the card's element and rarity
             if (this.selectedCard.id.includes('fire')) {
-                towerType = 'cannon'; // Fire-based towers are more like cannons
+                towerType = 'fire_' + (this.selectedCard.rarity === CardRarity.COMMON ? 'basic' : 'advanced');
+            } else if (this.selectedCard.id.includes('water')) {
+                towerType = 'water_' + (this.selectedCard.rarity === CardRarity.COMMON ? 'basic' : 'advanced');
+            } else if (this.selectedCard.id.includes('earth')) {
+                towerType = 'earth_' + (this.selectedCard.rarity === CardRarity.COMMON ? 'basic' : 'advanced');
             } else if (this.selectedCard.id.includes('air')) {
-                towerType = 'doubleArrow'; // Air-based towers are like double arrows
+                towerType = 'air_' + (this.selectedCard.rarity === CardRarity.COMMON ? 'basic' : 'advanced');
+            } else if (this.selectedCard.id.includes('shadow')) {
+                towerType = 'shadow_' + (this.selectedCard.rarity === CardRarity.COMMON ? 'basic' : 'advanced');
+            } else {
+                // Fallback to generic types for non-elemental cards
+                towerType = this.selectedCard.rarity === CardRarity.COMMON ? 'arrow' : 'doubleArrow';
             }
             
             // Place tower through the game's API
@@ -588,11 +633,21 @@ export class TCGIntegration {
                 
                 // Set tower properties based on card
                 if (tower) {
-                    tower.element = this.selectedCard.element;
+                    // Make sure element is properly set (might be an array for dual-element cards)
+                    if (Array.isArray(this.selectedCard.element)) {
+                        tower.element = this.selectedCard.element[0]; // Use primary element
+                    } else {
+                        tower.element = this.selectedCard.element;
+                    }
+                    
+                    // Apply card stats
                     tower.damage = stats.damage;
                     tower.range = stats.range;
                     tower.fireRate = stats.fireRate;
                     tower.specialAbility = stats.specialAbility;
+                    
+                    // Apply any element-specific properties
+                    tower.setAdditionalStats();
                 }
                 
                 // Deduct mana
@@ -665,10 +720,49 @@ export class TCGIntegration {
             hitCount++;
         }
         
-        // Create visual effect - for now, use existing effect system
-        this.game.powerCards.createMeteorEffect({ x: 0, y: 0, z: 0 }, spellStats.element);
+        // Find the best target position for visual effect (center of enemy group)
+        const targetPosition = this.findBestMeteorTarget();
+        
+        // Create visual effect
+        const effect = this.game.powerCards.createMeteorEffect(targetPosition, spellStats.element);
+        // Add effect to active effects list
+        this.game.powerCards.activeEffects.push(effect);
         
         return hitCount > 0;
+    }
+    
+    // Helper method to find the best target position for area spells
+    findBestMeteorTarget() {
+        const enemies = this.game.enemies;
+        
+        if (enemies.length === 0) {
+            // If no enemies, target the center of the map
+            return { x: 0, y: 0.5, z: 0 };
+        }
+        
+        // Simple strategy: target the group with most enemies
+        const meteorRadius = 5;
+        let bestTarget = null;
+        let maxEnemiesHit = 0;
+        
+        for (const enemy of enemies) {
+            let enemiesHit = 0;
+            
+            // Count how many enemies would be hit if we target this enemy
+            for (const otherEnemy of enemies) {
+                const distance = this.game.calculateDistance(enemy.position, otherEnemy.position);
+                if (distance <= meteorRadius) {
+                    enemiesHit++;
+                }
+            }
+            
+            if (enemiesHit > maxEnemiesHit) {
+                maxEnemiesHit = enemiesHit;
+                bestTarget = enemy.position;
+            }
+        }
+        
+        return bestTarget || { x: enemies[0].position.x, y: 0.5, z: enemies[0].position.z };
     }
     
     castFreezeSpell(spellStats) {
@@ -682,8 +776,10 @@ export class TCGIntegration {
             hitCount++;
         }
         
-        // Create visual effect - for now, use existing effect system
-        this.game.powerCards.createFreezeEffect({ x: 0, y: 0, z: 0 });
+        // Create visual effect
+        const effect = this.game.powerCards.createFreezeEffect({ x: 0, y: 0, z: 0 });
+        // Add effect to active effects list
+        this.game.powerCards.activeEffects.push(effect);
         
         return hitCount > 0;
     }
@@ -717,15 +813,24 @@ export class TCGIntegration {
     updateMaxManaByWave() {
         const currentWave = this.game.currentWave;
         
-        // Set max mana based on current wave
+        // Set max mana based on current wave - more gradual progression
         switch (currentWave) {
             case 1:
                 this.maxMana = 5;
                 break;
             case 2:
-                this.maxMana = 7;
+                this.maxMana = 6;
                 break;
             case 3:
+                this.maxMana = 7;
+                break;
+            case 4:
+                this.maxMana = 8;
+                break;
+            case 5:
+                this.maxMana = 9;
+                break;
+            case 6:
             default:
                 this.maxMana = this.absoluteMaxMana; // 10
                 break;

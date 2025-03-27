@@ -81,13 +81,115 @@ export class PowerCards {
         const targetPosition = this.findBestMeteorTarget();
         
         // Create meteor strike effect
-        const meteorEffect = this.game.renderer.createSpecialEffect('meteor', targetPosition);
+        const meteorEffect = this.createMeteorEffect(targetPosition);
         this.activeEffects.push(meteorEffect);
         
         // Damage enemies in area when meteor impacts
         setTimeout(() => {
             this.applyMeteorDamage(targetPosition);
         }, 1000); // Delay damage until meteor impacts
+    }
+    
+    createMeteorEffect(position, element = 'fire') {
+        // Create a meteor visual effect
+        const meteorRadius = 0.5;
+        const meteorGeometry = new THREE.SphereGeometry(meteorRadius, 8, 8);
+        const meteorMaterial = new THREE.MeshPhongMaterial({
+            color: element === 'fire' ? 0xFF5722 : 0xFF9800,
+            emissive: 0xE64A19,
+            emissiveIntensity: 0.5
+        });
+        
+        const meteor = new THREE.Mesh(meteorGeometry, meteorMaterial);
+        
+        // Start position high above the target
+        meteor.position.set(position.x, position.y + 20, position.z);
+        this.game.renderer.scene.add(meteor);
+        
+        // Create trail particles
+        const particleCount = 20;
+        const particleGeometry = new THREE.BufferGeometry();
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0xFF9800,
+            size: 0.2,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particles = new THREE.Points(particleGeometry, particleMaterial);
+        this.game.renderer.scene.add(particles);
+        
+        // Create effect object with update method
+        const startTime = performance.now();
+        const impactTime = startTime + 1000; // 1 second to impact
+        
+        return {
+            update: (currentTime) => {
+                // Calculate progress
+                const elapsed = currentTime - startTime;
+                const duration = 2000; // 2 seconds total effect duration
+                
+                if (elapsed > duration) {
+                    // Remove meteor and particles
+                    this.game.renderer.scene.remove(meteor);
+                    this.game.renderer.scene.remove(particles);
+                    return true; // Effect completed
+                }
+                
+                // Before impact
+                if (currentTime < impactTime) {
+                    const fallProgress = (currentTime - startTime) / (impactTime - startTime);
+                    
+                    // Move meteor towards impact point
+                    meteor.position.y = position.y + 20 * (1 - fallProgress);
+                    
+                    // Create trail effect
+                    const positions = new Float32Array(particleCount * 3);
+                    
+                    for (let i = 0; i < particleCount; i++) {
+                        const i3 = i * 3;
+                        const offset = Math.random() * 0.2;
+                        
+                        positions[i3] = meteor.position.x + (Math.random() - 0.5) * 0.5;
+                        positions[i3 + 1] = meteor.position.y + (Math.random() + 0.5) * offset;
+                        positions[i3 + 2] = meteor.position.z + (Math.random() - 0.5) * 0.5;
+                    }
+                    
+                    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                } 
+                // After impact
+                else {
+                    const impactProgress = (currentTime - impactTime) / (duration - (impactTime - startTime));
+                    
+                    if (impactProgress < 0.1) {
+                        // Initial impact - create explosion particles
+                        const positions = new Float32Array(particleCount * 3);
+                        
+                        for (let i = 0; i < particleCount; i++) {
+                            const i3 = i * 3;
+                            const angle = Math.random() * Math.PI * 2;
+                            const radius = Math.random() * 5;
+                            
+                            positions[i3] = position.x + Math.cos(angle) * radius * impactProgress * 10;
+                            positions[i3 + 1] = position.y + Math.random() * 2;
+                            positions[i3 + 2] = position.z + Math.sin(angle) * radius * impactProgress * 10;
+                        }
+                        
+                        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    }
+                    
+                    // Hide meteor after impact
+                    meteor.visible = false;
+                    
+                    // Fade out particles
+                    if (impactProgress > 0.5) {
+                        particleMaterial.opacity = 0.8 * (1 - (impactProgress - 0.5) * 2);
+                    }
+                }
+                
+                return false; // Effect still active
+            }
+        };
     }
     
     findBestMeteorTarget() {
@@ -146,13 +248,96 @@ export class PowerCards {
         const centerPosition = { x: 0, y: 0, z: 0 };
         
         // Create freeze effect
-        const freezeEffect = this.game.renderer.createSpecialEffect('freeze', centerPosition);
+        const freezeEffect = this.createFreezeEffect(centerPosition);
         this.activeEffects.push(freezeEffect);
         
         // Apply slow effect to all enemies
         for (const enemy of this.game.enemies) {
-            enemy.applySlowEffect(0.5, 10); // 50% slow for 10 seconds
+            enemy.applyStatusEffect('slow', {
+                duration: 10,
+                speedModifier: 0.5 // 50% slow for 10 seconds
+            });
         }
+    }
+    
+    createFreezeEffect(position) {
+        // Create a freeze wave visual effect
+        const waveRadius = 0.5;
+        const waveGeometry = new THREE.RingGeometry(0, waveRadius, 32);
+        const waveMaterial = new THREE.MeshBasicMaterial({
+            color: 0x2196F3, // Blue
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide
+        });
+        
+        const wave = new THREE.Mesh(waveGeometry, waveMaterial);
+        wave.rotation.x = Math.PI / 2; // Lay flat on the ground
+        wave.position.set(position.x, position.y + 0.1, position.z);
+        this.game.renderer.scene.add(wave);
+        
+        // Create ice crystal particles
+        const particleCount = 50;
+        const particleGeometry = new THREE.BufferGeometry();
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0x4FC3F7, // Light blue
+            size: 0.2,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particles = new THREE.Points(particleGeometry, particleMaterial);
+        this.game.renderer.scene.add(particles);
+        
+        // Create effect object with update method
+        const startTime = performance.now();
+        
+        return {
+            update: (currentTime) => {
+                // Calculate progress
+                const elapsed = currentTime - startTime;
+                const duration = 3000; // 3 seconds total effect duration
+                const progress = Math.min(elapsed / duration, 1);
+                
+                if (progress >= 1) {
+                    // Remove wave and particles
+                    this.game.renderer.scene.remove(wave);
+                    this.game.renderer.scene.remove(particles);
+                    return true; // Effect completed
+                }
+                
+                // Expand the wave
+                const expandedRadius = waveRadius + (progress * 10);
+                wave.scale.set(expandedRadius, expandedRadius, 1);
+                
+                // Fade out wave as it expands
+                if (progress > 0.5) {
+                    waveMaterial.opacity = 0.7 * (1 - (progress - 0.5) * 2);
+                }
+                
+                // Create ice crystal particle effect
+                const positions = new Float32Array(particleCount * 3);
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const i3 = i * 3;
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * expandedRadius;
+                    
+                    positions[i3] = position.x + Math.cos(angle) * radius;
+                    positions[i3 + 1] = position.y + Math.random() * 0.5; // Slight height variation
+                    positions[i3 + 2] = position.z + Math.sin(angle) * radius;
+                }
+                
+                particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                
+                // Fade out particles near the end
+                if (progress > 0.7) {
+                    particleMaterial.opacity = 0.8 * (1 - (progress - 0.7) / 0.3);
+                }
+                
+                return false; // Effect still active
+            }
+        };
     }
     
     activateSummonHero() {

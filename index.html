@@ -16,7 +16,47 @@
             <div id="game-status">
                 <div id="gold">Gold: <span id="gold-amount">100</span></div>
                 <div id="lives">Lives: <span id="lives-amount">20</span></div>
-                <div id="wave">Wave: <span id="wave-number">1</span>/3</div>
+                <div id="wave">Wave: <span id="wave-number">1/6</span></div>
+                <div id="mana-counter" class="hidden">Mana: <span id="mana-amount">5</span>/<span id="max-mana-amount">5</span></div>
+                <div id="debug-controls">
+                    <button id="toggle-card-debug">🎮 Debug Cards</button>
+                    <button id="toggle-debug-panel" class="hidden">🛠️ Debug Panel</button>
+                </div>
+                <div id="debug-panel" class="hidden">
+                    <div class="debug-panel-header">Debug Panel</div>
+                    <div class="debug-section">
+                        <label><input type="checkbox" id="debug-infinite-lives"> Infinite Lives</label>
+                        <label><input type="checkbox" id="debug-infinite-gold"> Infinite Gold</label>
+                        <label><input type="checkbox" id="debug-infinite-mana"> Infinite Mana</label>
+                    </div>
+                    <div class="debug-section">
+                        <div class="section-title">Enemy Spawning</div>
+                        <div class="debug-enemy-controls">
+                            <button id="spawn-simple">Simple</button>
+                            <button id="spawn-elephant">Elephant</button>
+                            <button id="spawn-pirate">Pirate</button>
+                            <button id="spawn-golem">Golem</button>
+                        </div>
+                        <div class="debug-element-controls">
+                            <button data-element="fire" class="element-btn fire">Fire</button>
+                            <button data-element="water" class="element-btn water">Water</button>
+                            <button data-element="earth" class="element-btn earth">Earth</button>
+                            <button data-element="air" class="element-btn air">Air</button>
+                            <button data-element="shadow" class="element-btn shadow">Shadow</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <div class="section-title">Wave Control</div>
+                        <div class="debug-wave-controls">
+                            <button id="debug-complete-wave">Complete Current Wave</button>
+                            <button id="debug-start-wave">Start Next Wave</button>
+                        </div>
+                    </div>
+                    <div class="debug-enemy-showcase hidden">
+                        <div class="section-title">Enemy Showcase</div>
+                        <div id="enemy-showcase-container"></div>
+                    </div>
+                </div>
             </div>
             <div id="tower-selection">
                 <div class="tower-selection-title">Towers</div>
@@ -36,10 +76,6 @@
                 <div class="power-card" data-card="freeze" data-cost="80">
                     <div class="card-icon">❄️</div>
                     Freeze Wave
-                </div>
-                <div class="power-card" data-card="hero" data-cost="150">
-                    <div class="card-icon">🦸</div>
-                    Summon Hero
                 </div>
                 <div class="power-card" data-card="gold" data-cost="0">
                     <div class="card-icon">💰</div>

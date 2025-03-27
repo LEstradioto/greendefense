@@ -62,7 +62,57 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'D':
                 window.game.toggleDebugMode();
                 break;
+            case 'c':
+            case 'C':
+                window.game.toggleCardDebugMode(); // Card debug mode shortcut
+                break;
         }
+    });
+    
+    // Setup debug button for card debug mode
+    document.getElementById('toggle-card-debug').addEventListener('click', () => {
+        window.game.toggleCardDebugMode();
+    });
+    
+    // Setup debug panel toggle
+    document.getElementById('toggle-debug-panel').addEventListener('click', () => {
+        const panel = document.getElementById('debug-panel');
+        panel.classList.toggle('hidden');
+    });
+    
+    // Setup debug element buttons (for enemy spawning)
+    document.querySelectorAll('.element-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Toggle selection state
+            document.querySelectorAll('.element-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        });
+    });
+    
+    // Setup debug enemy spawn buttons
+    document.querySelectorAll('.debug-enemy-controls button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Get the selected element (if any)
+            const selectedElement = document.querySelector('.element-btn.selected');
+            let elementType = 'neutral'; // Default
+            
+            if (selectedElement) {
+                elementType = selectedElement.dataset.element;
+            }
+            
+            // Spawn the enemy with the selected element
+            const enemyType = btn.id.replace('spawn-', '');
+            window.game.debugSpawnEnemy(enemyType, elementType);
+        });
+    });
+    
+    // Setup debug wave control buttons
+    document.getElementById('debug-complete-wave').addEventListener('click', () => {
+        window.game.debugCompleteWave();
+    });
+    
+    document.getElementById('debug-start-wave').addEventListener('click', () => {
+        window.game.debugStartWave();
     });
 
     // Initialize tower selection UI

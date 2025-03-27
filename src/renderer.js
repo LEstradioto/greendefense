@@ -1,6 +1,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ElementTypes, ElementStyles } from './elements.js';
 
 export class Renderer {
     constructor(canvas) {
@@ -144,7 +145,229 @@ export class Renderer {
 
         // Toggle debug helpers
         this.gridHelper.visible = game.debugMode;
+        
+        // Get current time
+        const currentTime = performance.now() / 1000; // Convert to seconds for easier animation timing
+        
+        // Animate tower glows and particles
+        game.towers.forEach(tower => {
+            if (tower.mesh) {
+                // Find the glow and particles in the tower mesh
+                tower.mesh.traverse(child => {
+                    // Animate glow effect
+                    if (child.isMesh && child.material && child.material.side === THREE.BackSide) {
+                        // Pulse the glow
+                        const pulseSpeed = 2; // Pulse 2 times per second
+                        const pulseAmount = 0.2; // Amount to pulse by
+                        const baseOpacity = 0.3;
+                        
+                        // Calculate pulsing opacity
+                        child.material.opacity = baseOpacity + pulseAmount * Math.sin(currentTime * pulseSpeed * Math.PI);
+                        
+                        // If tower is empowered, make glow stronger
+                        if (tower.empowered) {
+                            child.material.opacity += 0.2;
+                            child.scale.set(1.2, 1.2, 1.2);
+                        } else {
+                            child.scale.set(1, 1, 1);
+                        }
+                    }
+                    
+                    // Animate particle effects
+                    if (child.isPoints) {
+                        // Rotate particles around the tower
+                        const particlePhase = tower.mesh.userData.particleAnimationPhase || 0;
+                        const positions = child.geometry.attributes.position.array;
+                        const particleCount = positions.length / 3;
+                        
+                        for (let i = 0; i < particleCount; i++) {
+                            const i3 = i * 3;
+                            const radius = 0.6 + 0.2 * Math.sin(currentTime + i * 0.5);
+                            const angle = currentTime * 0.5 + particlePhase + i * (Math.PI * 2 / particleCount);
+                            
+                            positions[i3] = radius * Math.cos(angle);
+                            positions[i3 + 2] = radius * Math.sin(angle);
+                            
+                            // Make particles float up and down slightly
+                            positions[i3 + 1] = 0.5 + 0.2 * Math.sin(currentTime * 2 + i);
+                        }
+                        
+                        child.geometry.attributes.position.needsUpdate = true;
+                    }
+                });
+            }
+        });
+        
+        // Animate projectile trails
+        game.projectiles.forEach(projectile => {
+            if (projectile.mesh && projectile.mesh.userData.particles) {
+                const particles = projectile.mesh.userData.particles;
+                const positions = particles.geometry.attributes.position.array;
+                const particleCount = positions.length / 3;
+                const particleAges = projectile.mesh.userData.particleAge;
+                const maxAge = projectile.mesh.userData.particleMaxAge;
+                const lastPos = projectile.mesh.userData.lastPosition;
+                const currentPos = projectile.mesh.position;
+                
+                // Calculate delta time (assume ~60fps for simplicity)
+                const deltaTime = 1/60;
+                
+                // Update each particle
+                for (let i = 0; i < particleCount; i++) {
+                    const i3 = i * 3;
+                    
+                    // Age the particle
+                    particleAges[i] += deltaTime;
+                    
+                    // If particle is too old, reset it to current position with a small random offset
+                    if (particleAges[i] > maxAge) {
+                        positions[i3] = (Math.random() - 0.5) * 0.1;
+                        positions[i3 + 1] = (Math.random() - 0.5) * 0.1;
+                        positions[i3 + 2] = (Math.random() - 0.5) * 0.1;
+                        particleAges[i] = 0;
+                    }
+                }
+                
+                // Update last position
+                projectile.mesh.userData.lastPosition = {
+                    x: currentPos.x,
+                    y: currentPos.y,
+                    z: currentPos.z
+                };
+                
+                // Update geometry
+                particles.geometry.attributes.position.needsUpdate = true;
+            }
+        });
+        
+        // Animate enemies
+        game.enemies.forEach(enemy => {
+            if (enemy.mesh) {
+                // Basic animation based on enemy type
+                const baseType = enemy.type.split('_').pop();
+                switch (baseType) {
+                    case 'simple':
+                        // Simple enemies wobble
+                        enemy.mesh.rotation.x = 0.2 * Math.sin(currentTime * 2);
+                        enemy.mesh.rotation.z = 0.2 * Math.cos(currentTime * 2);
+                        break;
+                    case 'elephant':
+                        // Elephants sway
+                        enemy.mesh.rotation.y = 0.1 * Math.sin(currentTime);
+                        break;
+                    case 'pirate':
+                        // Pirates spin slowly
+                        enemy.mesh.rotation.y += 0.01;
+                        break;
+                    case 'golem':
+                        // Golems pulse
+                        const scale = 1 + 0.05 * Math.sin(currentTime * 1.5);
+                        enemy.mesh.scale.set(scale, scale, scale);
+                        break;
+                }
+                
+                // Animate elemental particles if present
+                if (enemy.mesh.userData.elementParticles) {
+                    const particles = enemy.mesh.userData.elementParticles;
+                    const positions = particles.geometry.attributes.position.array;
+                    const particleCount = positions.length / 3;
+                    
+                    for (let i = 0; i < particleCount; i++) {
+                        const i3 = i * 3;
+                        const angle = (currentTime + i) * 2;
+                        const radius = 0.4 + 0.1 * Math.sin(currentTime * 3 + i);
+                        
+                        // Update particle positions based on element type
+                        switch (enemy.mesh.userData.elementType) {
+                            case 'fire':
+                                // Fire particles move up and outward
+                                positions[i3] = radius * Math.cos(angle);
+                                positions[i3+1] = 0.1 + 0.2 * Math.sin(currentTime * 4 + i);
+                                positions[i3+2] = radius * Math.sin(angle);
+                                break;
+                            case 'water':
+                                // Water particles flow in circles
+                                positions[i3] = radius * Math.cos(angle * 0.5);
+                                positions[i3+1] = 0.1 * Math.sin(currentTime * 2 + i);
+                                positions[i3+2] = radius * Math.sin(angle * 0.5);
+                                break;
+                            case 'earth':
+                                // Earth particles orbit slowly
+                                positions[i3] = radius * Math.cos(angle * 0.3);
+                                positions[i3+1] = 0.05 * Math.sin(currentTime + i);
+                                positions[i3+2] = radius * Math.sin(angle * 0.3);
+                                break;
+                            case 'air':
+                                // Air particles move quickly and chaotically
+                                positions[i3] = radius * Math.cos(angle * 2);
+                                positions[i3+1] = 0.2 * Math.sin(currentTime * 5 + i);
+                                positions[i3+2] = radius * Math.sin(angle * 2);
+                                break;
+                            case 'shadow':
+                                // Shadow particles pulse in and out
+                                const pulseRadius = 0.3 + 0.3 * Math.sin(currentTime + i);
+                                positions[i3] = pulseRadius * Math.cos(angle * 0.7);
+                                positions[i3+1] = 0.1 * Math.sin(currentTime * 1.5 + i);
+                                positions[i3+2] = pulseRadius * Math.sin(angle * 0.7);
+                                break;
+                        }
+                    }
+                    
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+                
+                // Enemies with status effects get visual indicators
+                if (enemy.statusEffects && enemy.statusEffects.length > 0) {
+                    // If enemy doesn't have an effect indicator, create one
+                    if (!enemy.mesh.userData.effectIndicator) {
+                        // Create effect indicator based on first status effect
+                        const effect = enemy.statusEffects[0];
+                        let effectColor = 0xFFFFFF;
+                        
+                        // Choose color based on effect type
+                        if (effect.type === 'burn') effectColor = 0xFF5722;
+                        else if (effect.type === 'slow') effectColor = 0x2196F3;
+                        else if (effect.type === 'weaken') effectColor = 0x9C27B0;
+                        
+                        // Create glow effect
+                        const effectGeometry = new THREE.SphereGeometry(0.4, 12, 12);
+                        const effectMaterial = new THREE.MeshBasicMaterial({
+                            color: effectColor,
+                            transparent: true,
+                            opacity: 0.3,
+                            side: THREE.BackSide,
+                            blending: THREE.AdditiveBlending
+                        });
+                        
+                        const effectMesh = new THREE.Mesh(effectGeometry, effectMaterial);
+                        enemy.mesh.add(effectMesh);
+                        enemy.mesh.userData.effectIndicator = effectMesh;
+                    }
+                    
+                    // Pulse the effect indicator
+                    const effectIndicator = enemy.mesh.userData.effectIndicator;
+                    if (effectIndicator) {
+                        const pulseAmount = 0.2;
+                        effectIndicator.material.opacity = 0.3 + pulseAmount * Math.sin(currentTime * 4);
+                    }
+                } else if (enemy.mesh.userData.effectIndicator) {
+                    // Remove effect indicator if no active effects
+                    enemy.mesh.remove(enemy.mesh.userData.effectIndicator);
+                    enemy.mesh.userData.effectIndicator = null;
+                }
+            }
+        });
 
+        // Animate map glow effects
+        if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer) {
+            const glowLayer = game.map.mapGroup.userData.glowLayer;
+            
+            // Very slow pulsing for the ground glow
+            const pulseAmount = 0.03;
+            const pulseSpeed = 0.2; // Very slow pulse
+            glowLayer.material.opacity = 0.07 + pulseAmount * Math.sin(currentTime * pulseSpeed);
+        }
+        
         // Render scene
         this.renderer.render(this.scene, this.camera);
     }
@@ -155,8 +378,16 @@ export class Renderer {
         // Create ground with more detail for grass appearance
         const groundGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, 32, 32);
         
-        // Create ground mesh with cartoon-style grass material
-        const ground = new THREE.Mesh(groundGeometry, this.materials.ground);
+        // Create ground mesh with cartoon-style grass material with subtle glow
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x2E8B57, // Sea green
+            roughness: 0.7,
+            metalness: 0.2,
+            emissive: 0x1E6E3E, // Darker green for emissive
+            emissiveIntensity: 0.2 // Subtle emissive glow
+        });
+        
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         
         // Add subtle vertex displacement for grass texture effect
         const vertices = ground.geometry.attributes.position.array;
@@ -173,6 +404,23 @@ export class Renderer {
         ground.rotation.x = -Math.PI / 2; // Rotate to horizontal
         ground.receiveShadow = true;
         mapGroup.add(ground);
+        
+        // Add a subtle glow layer above the ground for cartoonish effect
+        const glowGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x66FF99,
+            transparent: true,
+            opacity: 0.07,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const glowLayer = new THREE.Mesh(glowGeometry, glowMaterial);
+        glowLayer.rotation.x = -Math.PI / 2; // Rotate to horizontal
+        glowLayer.position.y = 0.03; // Slightly above ground
+        mapGroup.add(glowLayer);
+        
+        // Store reference for animation
+        mapGroup.userData.glowLayer = glowLayer;
 
         // Create special material for restricted area
         const restrictedMaterial = new THREE.MeshStandardMaterial({
@@ -248,28 +496,227 @@ export class Renderer {
     createEnemy(enemy) {
         let geometry;
         let material;
-
+        
+        // Extract base type and element
+        let baseType = enemy.type;
+        let elementType = 'neutral';
+        
+        // Check if enemy type contains an element
+        const elements = ['fire', 'water', 'earth', 'air', 'shadow'];
+        for (const element of elements) {
+            if (enemy.type.startsWith(element + '_')) {
+                elementType = element;
+                baseType = enemy.type.substring(element.length + 1);
+                break;
+            }
+        }
+        
         // Create mesh based on enemy type
-        switch (enemy.type) {
+        switch (baseType) {
             case 'simple':
                 geometry = new THREE.SphereGeometry(0.3, 16, 16);
-                material = this.materials.simple;
                 break;
             case 'elephant':
                 geometry = new THREE.BoxGeometry(0.5, 0.5, 0.7);
-                material = this.materials.elephant;
                 break;
             case 'pirate':
                 geometry = new THREE.ConeGeometry(0.3, 0.8, 5);
-                material = this.materials.pirate;
+                break;
+            case 'golem':
+                // Create a more complex shape for golem
+                geometry = new THREE.DodecahedronGeometry(0.4, 0);
                 break;
             default:
                 geometry = new THREE.SphereGeometry(0.3, 16, 16);
-                material = this.materials.simple;
+        }
+        
+        // Create material based on element
+        switch (elementType) {
+            case 'fire':
+                material = new THREE.MeshStandardMaterial({
+                    color: 0xe74c3c,
+                    emissive: 0xc0392b,
+                    emissiveIntensity: 0.5,
+                    roughness: 0.7,
+                    metalness: 0.3
+                });
+                break;
+            case 'water':
+                material = new THREE.MeshStandardMaterial({
+                    color: 0x3498db,
+                    emissive: 0x2980b9,
+                    emissiveIntensity: 0.3,
+                    roughness: 0.3,
+                    metalness: 0.7,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                break;
+            case 'earth':
+                material = new THREE.MeshStandardMaterial({
+                    color: 0x27ae60,
+                    emissive: 0x229954,
+                    emissiveIntensity: 0.2,
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
+                break;
+            case 'air':
+                material = new THREE.MeshStandardMaterial({
+                    color: 0xecf0f1,
+                    emissive: 0xbdc3c7,
+                    emissiveIntensity: 0.3,
+                    roughness: 0.4,
+                    metalness: 0.6,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                break;
+            case 'shadow':
+                material = new THREE.MeshStandardMaterial({
+                    color: 0x9b59b6,
+                    emissive: 0x8e44ad,
+                    emissiveIntensity: 0.4,
+                    roughness: 0.5,
+                    metalness: 0.5
+                });
+                break;
+            default:
+                // Different colors for different enemy types
+                switch (baseType) {
+                    case 'simple':
+                        material = new THREE.MeshStandardMaterial({ 
+                            color: 0x95a5a6,
+                            roughness: 0.5,
+                            metalness: 0.3
+                        });
+                        break;
+                    case 'elephant':
+                        material = new THREE.MeshStandardMaterial({ 
+                            color: 0x7f8c8d,
+                            roughness: 0.8,
+                            metalness: 0.1
+                        });
+                        break;
+                    case 'pirate':
+                        material = new THREE.MeshStandardMaterial({ 
+                            color: 0x34495e,
+                            roughness: 0.6,
+                            metalness: 0.4
+                        });
+                        break;
+                    case 'golem':
+                        material = new THREE.MeshStandardMaterial({ 
+                            color: 0x2c3e50,
+                            roughness: 0.9,
+                            metalness: 0.2
+                        });
+                        break;
+                    default:
+                        material = this.materials.simple;
+                }
         }
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
+        
+        // Add some decorative features based on enemy type
+        if (baseType === 'elephant') {
+            // Add "tusks" to elephant
+            const tuskGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8);
+            
+            const tusk1 = new THREE.Mesh(
+                tuskGeometry, 
+                new THREE.MeshStandardMaterial({ 
+                    color: 0xecf0f1, 
+                    roughness: 0.5 
+                })
+            );
+            tusk1.position.set(0.15, -0.1, 0.3);
+            tusk1.rotation.x = Math.PI / 3;
+            
+            const tusk2 = tusk1.clone();
+            tusk2.position.set(-0.15, -0.1, 0.3);
+            
+            mesh.add(tusk1, tusk2);
+        } else if (baseType === 'pirate') {
+            // Add "hat" to pirate
+            const hatGeometry = new THREE.CylinderGeometry(0.2, 0.4, 0.1, 8);
+            const hat = new THREE.Mesh(
+                hatGeometry, 
+                new THREE.MeshStandardMaterial({ 
+                    color: 0x2c3e50, 
+                    roughness: 0.7 
+                })
+            );
+            hat.position.set(0, 0.3, 0);
+            
+            mesh.add(hat);
+        } else if (baseType === 'golem') {
+            // Add glowing eyes to golem
+            const eyeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ 
+                color: elementType === 'neutral' ? 0xff0000 : material.color,
+                emissive: material.emissive,
+                emissiveIntensity: 1.0
+            });
+            
+            const eye1 = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            eye1.position.set(0.15, 0.1, 0.3);
+            
+            const eye2 = eye1.clone();
+            eye2.position.set(-0.15, 0.1, 0.3);
+            
+            mesh.add(eye1, eye2);
+        }
+        
+        // Add elemental effect based on type
+        if (elementType !== 'neutral') {
+            // Add glow effect
+            const glowGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const glowColor = material.color.clone();
+            
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: glowColor,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+            
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            mesh.add(glow);
+            
+            // Add elemental particles
+            const particleCount = 5;
+            const particleGeometry = new THREE.BufferGeometry();
+            const particlePositions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 0.4;
+                
+                particlePositions[i3] = Math.cos(angle) * radius;
+                particlePositions[i3+1] = (Math.random() - 0.5) * 0.5;
+                particlePositions[i3+2] = Math.sin(angle) * radius;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: glowColor,
+                size: 0.08,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            mesh.add(particles);
+            
+            // Store for animation
+            mesh.userData.elementParticles = particles;
+            mesh.userData.elementType = elementType;
+        }
 
         // Add health bar
         const healthBarData = this.createHealthBar();
@@ -334,36 +781,27 @@ export class Renderer {
         const towerGroup = new THREE.Group();
         let baseMaterial, topMaterial;
 
-        // Set materials based on tower type (base and top can be different)
-        switch (tower.type) {
-            case 'arrow':
-                baseMaterial = this.materials.arrow;
-                topMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0x388E3C, 
-                    roughness: 0.5,
-                    metalness: 0.7
-                });
-                break;
-            case 'doubleArrow':
-                baseMaterial = this.materials.doubleArrow;
-                topMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0x4CAF50, 
-                    roughness: 0.5,
-                    metalness: 0.8
-                });
-                break;
-            case 'cannon':
-                baseMaterial = this.materials.cannon;
-                topMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0x2E7D32, 
-                    roughness: 0.3,
-                    metalness: 0.9
-                });
-                break;
-            default:
-                baseMaterial = this.materials.arrow;
-                topMaterial = this.materials.arrow;
-        }
+        // Get element style if tower has an element
+        const elementStyle = tower.element && ElementStyles[tower.element] ? 
+            ElementStyles[tower.element] : 
+            { color: 0x388E3C, emissive: 0x2E7D32, particleColor: 0x4CAF50 };
+        
+        // Create materials based on element
+        baseMaterial = new THREE.MeshStandardMaterial({ 
+            color: elementStyle.color, 
+            roughness: 0.5,
+            metalness: 0.7,
+            emissive: elementStyle.emissive,
+            emissiveIntensity: 0.3
+        });
+        
+        topMaterial = new THREE.MeshStandardMaterial({ 
+            color: elementStyle.color, 
+            roughness: 0.4,
+            metalness: 0.8,
+            emissive: elementStyle.emissive,
+            emissiveIntensity: 0.5
+        });
 
         // Create the base (cylindrical base)
         const baseGeometry = new THREE.CylinderGeometry(0.4, 0.5, 0.4, 8);
@@ -374,77 +812,343 @@ export class Renderer {
 
         // Add top part - different for each tower type
         let top;
-        switch (tower.type) {
-            case 'arrow':
-                // Cone-shaped top for arrow tower
-                const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
-                top = new THREE.Mesh(topGeometry, topMaterial);
-                top.position.y = 0.7; // Position above the base
-                break;
-                
-            case 'doubleArrow':
-                // Double-pointed top for double arrow tower
-                const doubleTopGroup = new THREE.Group();
-                
-                const cone1 = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.25, 0.5, 8),
-                    topMaterial
-                );
-                cone1.position.set(0.2, 0.7, 0);
-                cone1.rotation.z = Math.PI/10;
-                
-                const cone2 = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.25, 0.5, 8),
-                    topMaterial
-                );
-                cone2.position.set(-0.2, 0.7, 0);
-                cone2.rotation.z = -Math.PI/10;
-                
-                doubleTopGroup.add(cone1, cone2);
-                top = doubleTopGroup;
-                break;
-                
-            case 'cannon':
-                // Sphere and cylinder for cannon tower
-                const cannonGroup = new THREE.Group();
-                
-                const sphere = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.35, 12, 12),
-                    topMaterial
-                );
-                sphere.position.y = 0.7;
-                
-                const barrel = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
-                    new THREE.MeshStandardMaterial({ 
-                        color: 0x212121,
-                        roughness: 0.3,
-                        metalness: 0.9
-                    })
-                );
-                barrel.position.set(0, 0.7, 0.4);
-                barrel.rotation.x = Math.PI/2;
-                
-                cannonGroup.add(sphere, barrel);
-                top = cannonGroup;
-                break;
-                
-            default:
-                // Default simple top
-                top = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.4, 0.4, 0.4),
-                    topMaterial
-                );
-                top.position.y = 0.7;
+        
+        // Check if it's an elemental tower type
+        if (tower.type.includes('_')) {
+            // It's an elemental tower, extract the element and level
+            const [element, level] = tower.type.split('_');
+            
+            // Create more visually unique towers based on element
+            switch (element) {
+                case 'fire':
+                    // Fire tower - flame or volcano-like shape with particles
+                    const fireGroup = new THREE.Group();
+                    
+                    // Base shape for fire tower (tapered cylinder)
+                    const fireCone = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.35, 0.7, 8),
+                        topMaterial
+                    );
+                    fireCone.position.y = 0.7;
+                    fireGroup.add(fireCone);
+                    
+                    // For advanced fire tower, add extra details
+                    if (level === 'advanced') {
+                        // Add a center flame
+                        const flameCore = new THREE.Mesh(
+                            new THREE.ConeGeometry(0.15, 0.4, 8),
+                            new THREE.MeshStandardMaterial({ 
+                                color: 0xFF9800, // More orange center
+                                emissive: 0xFF5722,
+                                emissiveIntensity: 0.8
+                            })
+                        );
+                        flameCore.position.y = 1.0;
+                        fireGroup.add(flameCore);
+                    }
+                    
+                    top = fireGroup;
+                    break;
+                    
+                case 'water':
+                    // Water tower - flowing, curved shape
+                    const waterGroup = new THREE.Group();
+                    
+                    // Sphere base for water tower
+                    const waterSphere = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.35, 12, 12),
+                        topMaterial
+                    );
+                    waterSphere.position.y = 0.7;
+                    waterGroup.add(waterSphere);
+                    
+                    // Add water jets/fountains for advanced tower
+                    if (level === 'advanced') {
+                        // Create multiple curved tubes
+                        for (let i = 0; i < 3; i++) {
+                            const curve = new THREE.QuadraticBezierCurve3(
+                                new THREE.Vector3(0, 0.7, 0),
+                                new THREE.Vector3(Math.cos(i * Math.PI * 2/3) * 0.3, 1.0, Math.sin(i * Math.PI * 2/3) * 0.3),
+                                new THREE.Vector3(Math.cos(i * Math.PI * 2/3) * 0.2, 1.2, Math.sin(i * Math.PI * 2/3) * 0.2)
+                            );
+                            
+                            const tubeGeometry = new THREE.TubeGeometry(curve, 8, 0.05, 8, false);
+                            const tubeMaterial = new THREE.MeshStandardMaterial({
+                                color: 0x4FC3F7,
+                                transparent: true,
+                                opacity: 0.8
+                            });
+                            
+                            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                            waterGroup.add(tube);
+                        }
+                    }
+                    
+                    top = waterGroup;
+                    break;
+                    
+                case 'earth':
+                    // Earth tower - rocky, solid shape
+                    const earthGroup = new THREE.Group();
+                    
+                    // Create a base rock formation
+                    const rockBase = new THREE.Mesh(
+                        new THREE.DodecahedronGeometry(0.35, 0),
+                        topMaterial
+                    );
+                    rockBase.position.y = 0.7;
+                    earthGroup.add(rockBase);
+                    
+                    // For advanced, add extra rock formations
+                    if (level === 'advanced') {
+                        // Add smaller rocks on top
+                        for (let i = 0; i < 3; i++) {
+                            const smallRock = new THREE.Mesh(
+                                new THREE.DodecahedronGeometry(0.15, 0),
+                                topMaterial
+                            );
+                            
+                            // Position randomly on top of base
+                            smallRock.position.set(
+                                (Math.random() - 0.5) * 0.3,
+                                0.9 + Math.random() * 0.2,
+                                (Math.random() - 0.5) * 0.3
+                            );
+                            
+                            // Random rotation
+                            smallRock.rotation.set(
+                                Math.random() * Math.PI,
+                                Math.random() * Math.PI,
+                                Math.random() * Math.PI
+                            );
+                            
+                            earthGroup.add(smallRock);
+                        }
+                    }
+                    
+                    top = earthGroup;
+                    break;
+                    
+                case 'air':
+                    // Air tower - light, airy design with motion
+                    const airGroup = new THREE.Group();
+                    
+                    // Create a central floating orb
+                    const airOrb = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.25, 12, 12),
+                        new THREE.MeshStandardMaterial({ 
+                            color: 0xECEFF1,
+                            transparent: true,
+                            opacity: 0.8,
+                            emissive: 0xCFD8DC,
+                            emissiveIntensity: 0.5
+                        })
+                    );
+                    airOrb.position.y = 0.8;
+                    airGroup.add(airOrb);
+                    
+                    // Add floating rings for both basic and advanced
+                    const ringCount = level === 'advanced' ? 3 : 1;
+                    for (let i = 0; i < ringCount; i++) {
+                        const ring = new THREE.Mesh(
+                            new THREE.TorusGeometry(0.3, 0.05, 8, 24),
+                            new THREE.MeshStandardMaterial({ 
+                                color: 0xB0BEC5,
+                                transparent: true,
+                                opacity: 0.7
+                            })
+                        );
+                        
+                        // Position around orb
+                        ring.position.y = 0.8;
+                        
+                        // Set different orientations
+                        if (i === 0) {
+                            ring.rotation.x = Math.PI/2;
+                        } else if (i === 1) {
+                            ring.rotation.y = Math.PI/2;
+                        }
+                        
+                        airGroup.add(ring);
+                        
+                        // Store in userData for animation
+                        airGroup.userData.rings = airGroup.userData.rings || [];
+                        airGroup.userData.rings.push(ring);
+                    }
+                    
+                    top = airGroup;
+                    break;
+                    
+                case 'shadow':
+                    // Shadow tower - dark, mysterious with void effects
+                    const shadowGroup = new THREE.Group();
+                    
+                    // Create a dark core
+                    const shadowCore = new THREE.Mesh(
+                        new THREE.OctahedronGeometry(0.3, 0),
+                        new THREE.MeshStandardMaterial({ 
+                            color: 0x4A148C,
+                            emissive: 0x311B92,
+                            emissiveIntensity: 0.7
+                        })
+                    );
+                    shadowCore.position.y = 0.7;
+                    shadowGroup.add(shadowCore);
+                    
+                    // Add floating dark matter particles
+                    if (level === 'advanced') {
+                        // Add extra void sphere
+                        const voidSphere = new THREE.Mesh(
+                            new THREE.SphereGeometry(0.4, 12, 12),
+                            new THREE.MeshBasicMaterial({
+                                color: 0x7E57C2,
+                                transparent: true,
+                                opacity: 0.3,
+                                side: THREE.BackSide
+                            })
+                        );
+                        voidSphere.position.y = 0.7;
+                        shadowGroup.add(voidSphere);
+                    }
+                    
+                    top = shadowGroup;
+                    break;
+                    
+                default:
+                    // Fallback to basic tower shape
+                    top = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.3, 0.6, 8),
+                        topMaterial
+                    );
+                    top.position.y = 0.7;
+            }
+        } else {
+            // Standard tower types
+            switch (tower.type) {
+                case 'arrow':
+                    // Cone-shaped top for arrow tower
+                    const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
+                    top = new THREE.Mesh(topGeometry, topMaterial);
+                    top.position.y = 0.7; // Position above the base
+                    break;
+                    
+                case 'doubleArrow':
+                    // Double-pointed top for double arrow tower
+                    const doubleTopGroup = new THREE.Group();
+                    
+                    const cone1 = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.25, 0.5, 8),
+                        topMaterial
+                    );
+                    cone1.position.set(0.2, 0.7, 0);
+                    cone1.rotation.z = Math.PI/10;
+                    
+                    const cone2 = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.25, 0.5, 8),
+                        topMaterial
+                    );
+                    cone2.position.set(-0.2, 0.7, 0);
+                    cone2.rotation.z = -Math.PI/10;
+                    
+                    doubleTopGroup.add(cone1, cone2);
+                    top = doubleTopGroup;
+                    break;
+                    
+                case 'cannon':
+                    // Sphere and cylinder for cannon tower
+                    const cannonGroup = new THREE.Group();
+                    
+                    const sphere = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.35, 12, 12),
+                        topMaterial
+                    );
+                    sphere.position.y = 0.7;
+                    
+                    const barrel = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
+                        new THREE.MeshStandardMaterial({ 
+                            color: 0x212121,
+                            roughness: 0.3,
+                            metalness: 0.9
+                        })
+                    );
+                    barrel.position.set(0, 0.7, 0.4);
+                    barrel.rotation.x = Math.PI/2;
+                    
+                    cannonGroup.add(sphere, barrel);
+                    top = cannonGroup;
+                    break;
+                    
+                default:
+                    // Default simple top
+                    top = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.4, 0.4, 0.4),
+                        topMaterial
+                    );
+                    top.position.y = 0.7;
+            }
         }
         
         top.castShadow = true;
         towerGroup.add(top);
+        
+        // Add a glow effect to the tower
+        // Use the already defined elementStyle from above
+            
+        // Create glow mesh
+        const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: elementStyle.particleColor,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide
+        });
+        
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        glow.position.y = 0.7; // Position at the top part
+        towerGroup.add(glow);
+        
+        // For more powerful towers or elemental types, add particle effects
+        if (tower.type === 'cannon' || tower.element !== ElementTypes.NEUTRAL) {
+            const particleGeometry = new THREE.BufferGeometry();
+            const particleCount = 10;
+            const particlePositions = new Float32Array(particleCount * 3);
+            
+            // Create particles around the tower
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                // Random position in a sphere
+                const radius = 0.6 + Math.random() * 0.3;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                
+                particlePositions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+                particlePositions[i3 + 1] = 0.5 + Math.random() * 0.5; // Y position
+                particlePositions[i3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: elementStyle.particleColor,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.7,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            towerGroup.add(particles);
+            
+            // Store animation data
+            towerGroup.userData.particles = particles;
+            towerGroup.userData.particleAnimationPhase = Math.random() * Math.PI * 2;
+        }
 
         // Add tower range indicator (circle with better visibility)
         const rangeGeometry = new THREE.RingGeometry(tower.range - 0.05, tower.range, 32);
         const rangeMaterial = new THREE.MeshBasicMaterial({
-            color: 0x4CAF50,
+            color: elementStyle.particleColor,
             transparent: true,
             opacity: 0.3,
             side: THREE.DoubleSide
@@ -465,6 +1169,11 @@ export class Renderer {
     createProjectile(projectile) {
         let geometry;
         let material;
+        
+        // Get element style if projectile has an element
+        const elementStyle = projectile.element && ElementStyles[projectile.element] ? 
+            ElementStyles[projectile.element] : 
+            { color: 0x76FF03, emissive: 0x33691E, particleColor: 0xA0FF4C };
 
         // Create geometry and material based on projectile type
         switch (projectile.type) {
@@ -472,9 +1181,9 @@ export class Renderer {
                 // Arrow-like projectile
                 geometry = new THREE.ConeGeometry(0.08, 0.4, 8);
                 material = new THREE.MeshStandardMaterial({ 
-                    color: 0x76FF03,
-                    emissive: 0x33691E,
-                    emissiveIntensity: 0.5,
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.8,
                     roughness: 0.3,
                     metalness: 0.8
                 });
@@ -484,9 +1193,9 @@ export class Renderer {
                 // Energy ball for double arrow
                 geometry = new THREE.SphereGeometry(0.15, 12, 12);
                 material = new THREE.MeshStandardMaterial({ 
-                    color: 0xB9F6CA,
-                    emissive: 0x00C853,
-                    emissiveIntensity: 0.7,
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.9,
                     roughness: 0.2,
                     metalness: 0.9,
                     transparent: true,
@@ -498,38 +1207,143 @@ export class Renderer {
                 // Cannonball with trail effect
                 geometry = new THREE.SphereGeometry(0.2, 12, 12);
                 material = new THREE.MeshStandardMaterial({ 
-                    color: 0x004D40,
-                    emissive: 0x00BFA5,
-                    emissiveIntensity: 0.3,
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.7,
                     roughness: 0.1,
                     metalness: 1.0
                 });
                 break;
                 
+            case 'fire':
+                // Fire projectile
+                geometry = new THREE.SphereGeometry(0.15, 12, 12);
+                material = new THREE.MeshStandardMaterial({ 
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 1.0,
+                    roughness: 0.2,
+                    metalness: 0.7,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                break;
+            
+            case 'water':
+                // Water projectile
+                geometry = new THREE.SphereGeometry(0.15, 12, 12);
+                material = new THREE.MeshStandardMaterial({ 
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.8,
+                    roughness: 0.1,
+                    metalness: 0.9,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                break;
+                
+            case 'earth':
+                // Earth projectile
+                geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                material = new THREE.MeshStandardMaterial({ 
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.5,
+                    roughness: 0.8,
+                    metalness: 0.3
+                });
+                break;
+                
+            case 'air':
+                // Air projectile
+                geometry = new THREE.TorusGeometry(0.12, 0.04, 8, 16);
+                material = new THREE.MeshStandardMaterial({ 
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.7,
+                    roughness: 0.2,
+                    metalness: 0.8,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                break;
+                
+            case 'shadow':
+                // Shadow projectile
+                geometry = new THREE.TetrahedronGeometry(0.15);
+                material = new THREE.MeshStandardMaterial({ 
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.8,
+                    roughness: 0.3,
+                    metalness: 0.9,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                break;
+                
             default:
                 geometry = new THREE.SphereGeometry(0.1, 8, 8);
-                material = this.materials.projectile;
+                material = new THREE.MeshStandardMaterial({
+                    color: elementStyle.color,
+                    emissive: elementStyle.emissive,
+                    emissiveIntensity: 0.5
+                });
         }
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         
-        // Add trail/glow effect for some projectiles
-        if (projectile.type === 'doubleArrow' || projectile.type === 'cannon') {
-            // Add a glowing halo
-            const glowGeometry = new THREE.SphereGeometry(
-                projectile.type === 'doubleArrow' ? 0.25 : 0.3, 
-                12, 12
-            );
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: projectile.type === 'doubleArrow' ? 0x69F0AE : 0x00BFA5,
+        // Add glowing halo to all projectiles
+        const glowSize = (projectile.type === 'cannon') ? 0.35 : 
+                        (projectile.type === 'arrow') ? 0.2 : 0.25;
+        
+        const glowGeometry = new THREE.SphereGeometry(glowSize, 12, 12);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: elementStyle.particleColor,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.BackSide,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        mesh.add(glow);
+        
+        // Add particle trail for special projectiles
+        if (projectile.element !== ElementTypes.NEUTRAL || 
+            projectile.type === 'doubleArrow' || 
+            projectile.type === 'cannon') {
+            
+            // Create trail particle system
+            const particleCount = 15;
+            const particleGeometry = new THREE.BufferGeometry();
+            const particlePositions = new Float32Array(particleCount * 3);
+            
+            // Initialize all particles at the center
+            for (let i = 0; i < particleCount * 3; i++) {
+                particlePositions[i] = 0;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: elementStyle.particleColor,
+                size: 0.08,
                 transparent: true,
-                opacity: 0.4,
-                side: THREE.BackSide
+                opacity: 0.7,
+                blending: THREE.AdditiveBlending
             });
             
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            mesh.add(glow);
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            mesh.add(particles);
+            
+            // Store particle system for animation
+            mesh.userData.particles = particles;
+            mesh.userData.particleAge = Array(particleCount).fill(0);
+            mesh.userData.particleMaxAge = 0.5; // seconds
+            mesh.userData.lastPosition = { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z };
         }
         
         this.scene.add(mesh);
