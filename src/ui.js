@@ -6,6 +6,18 @@ export class UI {
         this.isValidPlacement = false;
         this.towerPlacementCallback = null;
         this.isTowerPlacementMode = false;
+        
+        // Touch controls state
+        this.touchState = {
+            isDragging: false,
+            startX: 0,
+            startY: 0,
+            lastTouchDistance: 0,
+            towerPlacementActive: false,
+            towerPlacementStartTime: 0,
+            longPressThreshold: 500, // ms for long press
+            touchStartPosition: { x: 0, y: 0 }
+        };
 
         // Cache elements
         this.towerOptions = document.querySelectorAll('.tower-option');
@@ -19,14 +31,54 @@ export class UI {
         
         // Setup keyboard shortcuts
         this.setupKeyboardShortcuts();
+        
+        // Setup touch controls for mobile
+        this.setupTouchControls();
     }
 
     setupRaycaster() {
         const renderer = this.game.renderer;
         const canvas = renderer.canvas;
 
-        canvas.addEventListener('mousemove', (event) => {
-            if (this.selectedTower) {
+        // Track mouse state for desktop
+        let isMouseDown = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        const dragThreshold = 5; // pixels
+        
+        // Mouse down handler
+        canvas.addEventListener('mousedown', (event) => {
+            isMouseDown = true;
+            dragStartX = event.clientX;
+            dragStartY = event.clientY;
+            
+            // Create tower preview immediately when mouse is pressed and a tower is selected
+            if (this.selectedTower && !this.towerPreviewMesh) {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                // Normalize coordinates to canvas space
+                const normalizedX = x / canvas.clientWidth;
+                const normalizedY = y / canvas.clientHeight;
+                
+                // Create tower preview
+                this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+                this.updateTowerPreview(normalizedX, normalizedY);
+            }
+        });
+        
+        // Mouse up handler
+        canvas.addEventListener('mouseup', (event) => {
+            // Check if this was a click vs. a drag
+            const dragDistance = Math.sqrt(
+                Math.pow(event.clientX - dragStartX, 2) + 
+                Math.pow(event.clientY - dragStartY, 2)
+            );
+            const wasDragging = dragDistance >= dragThreshold;
+            
+            // Only place tower if it wasn't a drag (for camera rotation)
+            if (this.selectedTower && !wasDragging) {
                 const rect = canvas.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
@@ -35,13 +87,201 @@ export class UI {
                 const normalizedX = x / canvas.clientWidth;
                 const normalizedY = y / canvas.clientHeight;
 
-                this.updateTowerPreview(normalizedX, normalizedY);
+                // Handle the click for tower placement
+                this.handleCanvasClick(normalizedX, normalizedY);
+            } else if (wasDragging) {
+                // If we were dragging (camera rotation), remove any tower preview to prevent accidental placement
+                if (this.towerPreviewMesh) {
+                    this.game.renderer.removeTowerPreview();
+                    this.towerPreviewMesh = null;
+                    
+                    // Create a new preview after a short delay to prevent immediate placement
+                    setTimeout(() => {
+                        if (this.selectedTower && !this.towerPreviewMesh) {
+                            this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+                        }
+                    }, 100);
+                }
+            }
+            
+            isMouseDown = false;
+        });
+        
+        // Mouse move for tower preview
+        canvas.addEventListener('mousemove', (event) => {
+            if (this.selectedTower) {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                // Check if cursor is inside the canvas
+                if (x >= 0 && x <= canvas.clientWidth && y >= 0 && y <= canvas.clientHeight) {
+                    // Normalize coordinates to canvas space
+                    const normalizedX = x / canvas.clientWidth;
+                    const normalizedY = y / canvas.clientHeight;
+    
+                    // Create tower preview if it doesn't exist
+                    if (!this.towerPreviewMesh && this.selectedTower) {
+                        this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+                    }
+    
+                    this.updateTowerPreview(normalizedX, normalizedY);
+                } else {
+                    // Hide preview when cursor leaves canvas
+                    if (this.towerPreviewMesh) {
+                        this.game.renderer.removeTowerPreview();
+                        this.towerPreviewMesh = null;
+                    }
+                }
             }
         });
+        
+        // We're not using click event anymore, as we handle the placement logic in mouseup event
+        // This ensures better distinction between camera rotation and tower placement
     }
 
     setupMouseMoveHandler() {
         // This is handled in the setupRaycaster method
+    }
+    
+    setupTouchControls() {
+        const renderer = this.game.renderer;
+        const canvas = renderer.canvas;
+        
+        // Touch start handler
+        canvas.addEventListener('touchstart', (event) => {
+            event.preventDefault();
+            
+            // Store initial touch position
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                this.touchState.startX = touch.clientX;
+                this.touchState.startY = touch.clientY;
+                this.touchState.isDragging = false;
+                
+                // For tower placement: show preview when touch starts
+                if (this.selectedTower) {
+                    // Mark this as a potential tower placement
+                    this.touchState.towerPlacementActive = true;
+                    
+                    // Convert touch to normalized coordinates
+                    const rect = canvas.getBoundingClientRect();
+                    const normalizedX = (touch.clientX - rect.left) / canvas.clientWidth;
+                    const normalizedY = (touch.clientY - rect.top) / canvas.clientHeight;
+                    
+                    // Store start position for tower placement
+                    this.touchState.touchStartPosition = { x: normalizedX, y: normalizedY };
+                    
+                    // Create tower preview if it doesn't exist
+                    if (!this.towerPreviewMesh) {
+                        this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+                    }
+                    
+                    // Update tower preview
+                    this.updateTowerPreview(normalizedX, normalizedY);
+                }
+            } 
+            // Pinch to zoom - store initial distance between touches
+            else if (event.touches.length === 2) {
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                this.touchState.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+            }
+        }, { passive: false });
+        
+        // Touch move handler
+        canvas.addEventListener('touchmove', (event) => {
+            event.preventDefault();
+            
+            // Single touch - camera pan or tower placement
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                
+                // Calculate delta
+                const deltaX = touch.clientX - this.touchState.startX;
+                const deltaY = touch.clientY - this.touchState.startY;
+                
+                // If tower placement is active, update preview position
+                if (this.selectedTower && this.touchState.towerPlacementActive) {
+                    const rect = canvas.getBoundingClientRect();
+                    const normalizedX = (touch.clientX - rect.left) / canvas.clientWidth;
+                    const normalizedY = (touch.clientY - rect.top) / canvas.clientHeight;
+                    
+                    this.updateTowerPreview(normalizedX, normalizedY);
+                    
+                    // Allow touch move up to a small threshold before considering it a drag
+                    // This way slight finger movements won't prevent tower placement
+                    const moveThreshold = 20; // pixels
+                    const dx = Math.abs(touch.clientX - this.touchState.startX);
+                    const dy = Math.abs(touch.clientY - this.touchState.startY);
+                    
+                    if (dx > moveThreshold || dy > moveThreshold) {
+                        this.touchState.isDragging = true;
+                    }
+                }
+                // Regular camera control - only if not in tower placement mode
+                else {
+                    // If enough movement, mark as dragging
+                    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+                        this.touchState.isDragging = true;
+                    }
+                    
+                    // Handle camera rotation
+                    if (this.touchState.isDragging) {
+                        // Rotate camera
+                        renderer.controls.rotateLeft(deltaX * 0.005);
+                        renderer.controls.rotateUp(deltaY * 0.005);
+                        
+                        // Update start position for next move
+                        this.touchState.startX = touch.clientX;
+                        this.touchState.startY = touch.clientY;
+                    }
+                }
+            }
+            // Two finger pinch - zoom camera
+            else if (event.touches.length === 2) {
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                const touchDistance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate zoom delta
+                const delta = (touchDistance - this.touchState.lastTouchDistance) * 0.01;
+                
+                // Zoom camera
+                renderer.controls.dollyIn(1 - delta);
+                
+                // Update last touch distance
+                this.touchState.lastTouchDistance = touchDistance;
+            }
+        }, { passive: false });
+        
+        // Touch end handler
+        canvas.addEventListener('touchend', (event) => {
+            event.preventDefault();
+            
+            // Handle tower placement if active
+            if (this.selectedTower && this.touchState.towerPlacementActive) {
+                // Only place tower if not dragging (to prevent accidental placement during camera rotation)
+                if (!this.touchState.isDragging) {
+                    const touch = event.changedTouches[0];
+                    const rect = canvas.getBoundingClientRect();
+                    const normalizedX = (touch.clientX - rect.left) / canvas.clientWidth;
+                    const normalizedY = (touch.clientY - rect.top) / canvas.clientHeight;
+                    
+                    // Update preview position one last time before placing
+                    this.updateTowerPreview(normalizedX, normalizedY);
+                    
+                    // Place the tower immediately on touch end
+                    this.handleCanvasClick(normalizedX, normalizedY);
+                }
+                
+                // Reset tower placement state
+                this.touchState.towerPlacementActive = false;
+            }
+            
+            // Reset touch state
+            this.touchState.isDragging = false;
+        }, { passive: false });
     }
     
     setupKeyboardShortcuts() {
@@ -68,6 +308,26 @@ export class UI {
     }
 
     selectTower(towerType) {
+        // On mobile, tapping the same tower toggles selection
+        // On desktop we always select the tower (for keyboard shortcuts 1,2,3 to work properly)
+        if (window.innerWidth <= 768 && towerType === this.selectedTower) {
+            // Deselect tower on mobile only
+            this.towerOptions.forEach(element => {
+                element.classList.remove('selected');
+            });
+            
+            // Clear selected tower
+            this.selectedTower = null;
+            
+            // Remove tower preview
+            if (this.towerPreviewMesh) {
+                this.game.renderer.removeTowerPreview();
+                this.towerPreviewMesh = null;
+            }
+            
+            return;
+        }
+        
         // Deselect previous tower option if any
         this.towerOptions.forEach(element => {
             element.classList.remove('selected');
@@ -90,19 +350,21 @@ export class UI {
     }
 
     cancelTowerPlacement() {
-        // Deselect tower option
+        // For consistency between mobile and desktop, we deselect the tower completely
+        
+        // Deselect tower in UI
         this.towerOptions.forEach(element => {
             element.classList.remove('selected');
         });
-
-        // Clear selected tower
-        this.selectedTower = null;
-
+        
         // Remove tower preview
         if (this.towerPreviewMesh) {
             this.game.renderer.removeTowerPreview();
             this.towerPreviewMesh = null;
         }
+        
+        // Clear selected tower
+        this.selectedTower = null;
         
         // Exit TCG placement mode if active
         if (this.isTowerPlacementMode && this.towerPlacementCallback) {
@@ -195,9 +457,20 @@ export class UI {
                 
                 if (success) {
                     // Tower placed successfully
-                    // Reset selection
-                    this.cancelTowerPlacement();
-                    console.log("Tower placement successful, selection reset");
+                    // Keep the same tower selected for multiple placements
+                    // First, remove the old preview
+                    if (this.towerPreviewMesh) {
+                        this.game.renderer.removeTowerPreview();
+                        this.towerPreviewMesh = null;
+                    }
+                    
+                    // Create a new preview for the next placement at the current position
+                    this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+                    
+                    // Update preview position to current cursor position
+                    this.updateTowerPreview(normalizedX, normalizedY);
+                    
+                    console.log("Tower placement successful, keeping selection and creating new preview");
                 } else {
                     console.log("Tower placement failed in game.placeTower");
                 }

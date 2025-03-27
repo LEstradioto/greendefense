@@ -21,6 +21,10 @@ export class TCGIntegration {
         this.manaRegenAmount = 1; // Amount of mana regenerated
         this.currentTurn = 0;
         
+        // Initial state for reset
+        this.initialMana = 5;
+        this.initialMaxMana = 5;
+        
         // Power cards integration
         this.powerCards = [];
         this.powerCardChance = 0.15; // 15% chance to get a power card when drawing
@@ -48,6 +52,11 @@ export class TCGIntegration {
         
         // Initial card draw
         this.drawInitialHand();
+        
+        // Add window resize listener to update display
+        window.addEventListener('resize', () => {
+            this.updateManaDisplay();
+        });
     }
     
     initializePowerCards() {
@@ -143,49 +152,97 @@ export class TCGIntegration {
     createCardUI() {
         // Create card container if it doesn't exist
         if (!document.getElementById('card-container')) {
+            // Create a wrapper for cards and mana
+            const containerWrapper = document.createElement('div');
+            containerWrapper.id = 'card-container-wrapper';
+            containerWrapper.style.position = 'fixed';
+            containerWrapper.style.bottom = '8px';
+            containerWrapper.style.left = '50%';
+            containerWrapper.style.transform = 'translateX(-50%)';
+            containerWrapper.style.zIndex = '1000';
+            containerWrapper.style.overflow = 'visible';
+            
             // Create the card container
             this.cardContainer = document.createElement('div');
             this.cardContainer.id = 'card-container';
             this.cardContainer.className = 'card-container';
             
-            // Style the container
-            Object.assign(this.cardContainer.style, {
-                position: 'fixed',
-                bottom: '10px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                gap: '10px',
-                padding: '15px',
-                paddingTop: '25px', // Extra space at top for mana display
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                borderRadius: '10px',
-                zIndex: '1000',
-                boxShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
-                border: '2px solid #3498db' // Blue border to highlight it
-            });
-            
-            // Add mana display
+            // Add mana display to the wrapper directly (outside the card container)
             const manaDisplay = document.createElement('div');
             manaDisplay.id = 'mana-display';
             manaDisplay.className = 'mana-display';
-            Object.assign(manaDisplay.style, {
-                position: 'absolute',
-                top: '-30px',
-                left: '0',
-                color: '#3498db',
-                fontWeight: 'bold',
-                fontSize: '18px'
-            });
-            this.cardContainer.appendChild(manaDisplay);
             
-            // Add to document
-            document.body.appendChild(this.cardContainer);
+            // Add elements to the DOM
+            containerWrapper.appendChild(manaDisplay);
+            containerWrapper.appendChild(this.cardContainer);
+            
+            // Add wrapper to document
+            document.body.appendChild(containerWrapper);
+            
+            // Add an additional style override to ensure transparency
+            const styleOverride = document.createElement('style');
+            styleOverride.textContent = `
+                #card-container {
+                    background-color: transparent !important;
+                    border: none !important;
+                    box-shadow: none !important;
+                    overflow-x: auto !important;
+                    overflow-y: hidden !important;
+                }
+                
+                #card-container-wrapper {
+                    overflow: visible !important;
+                }
+                
+                .mana-display {
+                    position: absolute;
+                    top: -30px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                }
+            `;
+            document.head.appendChild(styleOverride);
             
             // Show the mana counter in the game status
-            document.getElementById('mana-counter').classList.remove('hidden');
+            const manaCounter = document.getElementById('mana-counter');
+            manaCounter.classList.remove('hidden');
         } else {
+            // If container already exists, find it
             this.cardContainer = document.getElementById('card-container');
+            
+            // If wrapper doesn't exist, check if we need to upgrade the structure
+            if (!document.getElementById('card-container-wrapper') && this.cardContainer) {
+                // Create wrapper and move existing container into it
+                const wrapper = document.createElement('div');
+                wrapper.id = 'card-container-wrapper';
+                wrapper.style.position = 'fixed';
+                wrapper.style.bottom = '8px';
+                wrapper.style.left = '50%';
+                wrapper.style.transform = 'translateX(-50%)';
+                wrapper.style.zIndex = '1000';
+                wrapper.style.overflow = 'visible';
+                
+                // Get existing container's parent
+                const parent = this.cardContainer.parentNode;
+                
+                // Create mana display
+                const mana = document.createElement('div');
+                mana.id = 'mana-display';
+                mana.className = 'mana-display';
+                
+                // Transfer existing mana display if it exists
+                const existingMana = document.getElementById('mana-display');
+                if (existingMana && existingMana.parentNode === this.cardContainer) {
+                    this.cardContainer.removeChild(existingMana);
+                    wrapper.appendChild(existingMana);
+                } else {
+                    wrapper.appendChild(mana);
+                }
+                
+                // Insert wrapper in DOM
+                parent.insertBefore(wrapper, this.cardContainer);
+                wrapper.appendChild(this.cardContainer);
+            }
         }
         
         // Update mana display
@@ -196,7 +253,16 @@ export class TCGIntegration {
         // Update the card mana display
         const manaDisplay = document.getElementById('mana-display');
         if (manaDisplay) {
-            manaDisplay.textContent = `Mana: ${this.mana}/${this.maxMana}`;
+            // Use data attributes for the actual values to avoid conflicting with CSS ::before content
+            manaDisplay.setAttribute('data-current', this.mana);
+            manaDisplay.setAttribute('data-max', this.maxMana);
+            
+            // On desktop show "Mana: X/Y", on mobile CSS will add the "Mana:" prefix
+            if (window.innerWidth > 768) {
+                manaDisplay.textContent = `Mana: ${this.mana}/${this.maxMana}`;
+            } else {
+                manaDisplay.textContent = `${this.mana}/${this.maxMana}`;
+            }
             
             // Show regeneration indicator if not at max
             if (this.mana < this.maxMana) {
@@ -209,19 +275,7 @@ export class TCGIntegration {
                 manaDisplay.classList.remove('regenerating');
             }
             
-            // Add more prominent styling to make sure it's visible
-            Object.assign(manaDisplay.style, {
-                position: 'absolute',
-                top: '-30px',
-                left: '0',
-                color: '#3498db',
-                fontWeight: 'bold',
-                fontSize: '18px',
-                backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                padding: '5px 10px',
-                borderRadius: '5px',
-                zIndex: '1001'
-            });
+            // Using CSS styles from main.css
         }
         
         // Update the header mana display
@@ -314,14 +368,7 @@ export class TCGIntegration {
         const manaDisplay = document.createElement('div');
         manaDisplay.id = 'mana-display';
         manaDisplay.className = 'mana-display';
-        Object.assign(manaDisplay.style, {
-            position: 'absolute',
-            top: '-30px',
-            left: '0',
-            color: '#3498db',
-            fontWeight: 'bold',
-            fontSize: '18px'
-        });
+        // We'll use CSS styles from main.css
         this.cardContainer.appendChild(manaDisplay);
         this.updateManaDisplay();
         
@@ -839,6 +886,33 @@ export class TCGIntegration {
         // Also give a small mana bonus for wave completion
         const manaBonus = currentWave; // 1, 2, or 3 mana bonus
         this.mana = Math.min(this.maxMana, this.mana + manaBonus);
+    }
+    
+    reset() {
+        // Reset mana to initial values
+        this.mana = this.initialMana;
+        this.maxMana = this.initialMaxMana;
+        
+        // Reset turn counter
+        this.currentTurn = 0;
+        
+        // Reset last mana regen time
+        this.lastManaRegenTime = 0;
+        
+        // Reset selected card
+        this.selectedCard = null;
+        
+        // Clear hand
+        this.hand = [];
+        
+        // Reset card UI
+        this.updateCardUI();
+        
+        // Draw a new initial hand
+        this.drawInitialHand();
+        
+        // Update mana display
+        this.updateManaDisplay();
     }
     
     getRarityMultiplier(rarity) {

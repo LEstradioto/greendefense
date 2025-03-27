@@ -348,6 +348,9 @@ export class Game {
                 
                 if (!hasInfiniteLives) {
                     this.player.lives -= 1;
+                    
+                    // Create life flash effect
+                    this.createLifeFlashEffect();
                 }
 
                 // Remove enemy mesh from scene
@@ -361,6 +364,7 @@ export class Game {
                 // Check if game over (skip if infinite lives enabled)
                 if (this.player.lives <= 0 && !hasInfiniteLives) {
                     this.gameOver = true;
+                    this.createGameOverEffect();
                     this.endGame(false);
                 }
             }
@@ -537,28 +541,117 @@ export class Game {
 
     victory() {
         this.gameOver = true;
+        
+        // Create fireworks for victory
+        this.createFireworksEffect();
+        
         this.endGame(true);
     }
 
+    resetGameState() {
+        // Reset game properties for a new game
+        this.enemies = [];
+        this.towers = [];
+        this.projectiles = [];
+        
+        // Reset player stats
+        this.player.gold = 100;
+        this.player.lives = 20;
+        this.player.score = 0;
+        
+        // Reset wave counters
+        this.currentWave = 1;
+        this.waveInProgress = false;
+        this.enemiesSpawned = 0;
+        this.enemiesDefeated = 0;
+        
+        // Reset game flags
+        this.gameOver = false;
+        this.gameStarted = false;
+        
+        // Reset the UI
+        this.updateUI();
+        
+        // Clean up any remaining meshes in the scene
+        if (this.renderer && this.renderer.scene) {
+            // Keep only essential elements (ground, lights)
+            this.renderer.cleanupScene();
+        }
+        
+        // Reset the map
+        if (this.map) {
+            this.map.reset();
+        }
+        
+        // Reset TCG if active
+        if (this.tcgIntegration) {
+            this.tcgIntegration.reset();
+        }
+    }
+    
     endGame(isVictory) {
         const overlay = document.getElementById('game-overlay');
+        const startScreen = document.getElementById('start-screen');
         const endScreen = document.getElementById('end-screen');
         const resultMessage = document.getElementById('result-message');
         const scoreDisplay = document.getElementById('score-display');
+        
+        console.log("Ending game, victory:", isVictory);
 
-        // Show end screen
-        overlay.classList.remove('hidden');
-        endScreen.classList.remove('hidden');
-
-        // Set result message
-        if (isVictory) {
-            resultMessage.textContent = 'Victory!';
-        } else {
-            resultMessage.textContent = 'Game Over';
-        }
-
-        // Display score
-        scoreDisplay.textContent = `${this.player.username}'s Score: ${this.player.score}`;
+        // Show end screen after a short delay
+        setTimeout(() => {
+            console.log("Showing end screen");
+            
+            // Show overlay
+            overlay.style.display = '';
+            overlay.classList.remove('hidden');
+            
+            // Show end screen immediately 
+            endScreen.style.display = '';
+            endScreen.classList.remove('hidden');
+            
+            // Hide start screen if it's visible
+            startScreen.classList.add('hidden');
+            
+            // Force refresh of display to ensure elements are visible
+            setTimeout(() => {
+                overlay.style.opacity = "1";
+                endScreen.style.opacity = "1";
+            }, 0);
+    
+            // Set result message
+            if (isVictory) {
+                resultMessage.textContent = 'Victory!';
+            } else {
+                resultMessage.textContent = 'Game Over';
+            }
+    
+            // Display score
+            scoreDisplay.textContent = `${this.player.username}'s Score: ${this.player.score}`;
+            
+            // Setup restart button to restart the game
+            const restartButton = document.getElementById('restart-button');
+            restartButton.onclick = null; // Clear any previous handlers
+            
+            restartButton.addEventListener('click', () => {
+                console.log("Restart button clicked, showing start screen");
+                
+                // Hide the end screen
+                endScreen.classList.add('hidden');
+                
+                // Show the start screen
+                startScreen.classList.remove('hidden');
+                
+                // Make sure elements are visible
+                overlay.style.display = '';
+                overlay.classList.remove('hidden');
+                
+                // Reset game state for a fresh start
+                this.resetGameState();
+                
+                console.log("Game state reset complete");
+            });
+        }, isVictory ? 3000 : 2500); // Longer delay for animations to complete
     }
 
     toggleDebugMode() {
@@ -856,10 +949,18 @@ export class Game {
     }
     
     debugStartWave() {
-        if (!this.cardDebugMode || this.waveInProgress) return;
+        if (!this.cardDebugMode) return;
         
-        this.startWave();
-        console.log("Debug: Started wave", this.currentWave);
+        // If a wave is in progress, complete it first
+        if (this.waveInProgress) {
+            this.debugCompleteWave();
+        }
+        
+        // After a short delay, start the next wave (even if the current wave completes)
+        setTimeout(() => {
+            this.startWave();
+            console.log("Debug: Started wave", this.currentWave);
+        }, 300);
     }
 
     calculateDistance(pos1, pos2) {
@@ -1031,5 +1132,125 @@ export class Game {
         };
         
         animate();
+    }
+    
+    createLifeFlashEffect() {
+        // Create a red flash effect when player loses a life
+        const flashElement = document.createElement('div');
+        flashElement.className = 'life-flash';
+        document.body.appendChild(flashElement);
+        
+        // Remove the element after animation completes
+        setTimeout(() => {
+            document.body.removeChild(flashElement);
+        }, 600);
+    }
+    
+    createGameOverEffect() {
+        // Create game over visual effect for defeat
+        const container = document.createElement('div');
+        container.className = 'game-over-effect';
+        document.body.appendChild(container);
+        
+        // Add game over text with shake animation
+        const gameOverText = document.createElement('div');
+        gameOverText.className = 'game-over-text';
+        gameOverText.textContent = 'GAME OVER';
+        document.body.appendChild(gameOverText);
+        
+        // Remove after animation completes
+        setTimeout(() => {
+            document.body.removeChild(container);
+            document.body.removeChild(gameOverText);
+        }, 2500);
+    }
+    
+    createFireworksEffect() {
+        // Create fireworks visual effect for victory
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+        
+        // Create multiple fireworks with different colors and timings
+        const colors = [
+            '#FF0000', '#00FF00', '#0000FF', '#FFFF00', 
+            '#FF00FF', '#00FFFF', '#FFFFFF', '#FF8800'
+        ];
+        
+        const launchFirework = (delay, color) => {
+            setTimeout(() => {
+                // Random position
+                const x = Math.random() * 100;
+                const y = 30 + Math.random() * 50;
+                
+                // Create the firework element
+                const firework = document.createElement('div');
+                firework.className = 'firework';
+                firework.style.left = `${x}%`;
+                firework.style.top = `${y}%`;
+                firework.style.backgroundColor = color;
+                firework.style.boxShadow = `0 0 15px 5px ${color}`;
+                container.appendChild(firework);
+                
+                // Create particles
+                const particleCount = 20 + Math.floor(Math.random() * 30);
+                for (let i = 0; i < particleCount; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'firework';
+                    
+                    // Calculate particle position (circular pattern)
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 2 + Math.random() * 3;
+                    const particleX = x + Math.cos(angle) * distance;
+                    const particleY = y + Math.sin(angle) * distance;
+                    
+                    // Set particle style
+                    particle.style.left = `${particleX}%`;
+                    particle.style.top = `${particleY}%`;
+                    particle.style.backgroundColor = color;
+                    particle.style.boxShadow = `0 0 8px 3px ${color}`;
+                    particle.style.opacity = '0';
+                    particle.style.transform = 'scale(0.1)';
+                    
+                    // Add to container
+                    container.appendChild(particle);
+                    
+                    // Animate the particle with slight delay
+                    setTimeout(() => {
+                        particle.style.opacity = '1';
+                        particle.style.transform = 'scale(1)';
+                        
+                        // Remove after animation completes
+                        setTimeout(() => {
+                            container.removeChild(particle);
+                        }, 2000);
+                    }, Math.random() * 300);
+                }
+                
+                // Remove main firework element after a short delay
+                setTimeout(() => {
+                    container.removeChild(firework);
+                }, 300);
+                
+            }, delay);
+        };
+        
+        // Launch multiple fireworks with different timings
+        for (let i = 0; i < 20; i++) {
+            const delay = i * 300;
+            const color = colors[i % colors.length];
+            launchFirework(delay, color);
+        }
+        
+        // Remove the container after all fireworks complete
+        setTimeout(() => {
+            document.body.removeChild(container);
+        }, 8000);
     }
 }

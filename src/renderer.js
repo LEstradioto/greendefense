@@ -780,6 +780,12 @@ export class Renderer {
         // Create a group for the tower and its components
         const towerGroup = new THREE.Group();
         let baseMaterial, topMaterial;
+        
+        // Determine if this is a special tower or basic tower
+        // Special towers: any tower with elemental type or cannon/doubleArrow
+        const isSpecialTower = tower.element !== ElementTypes.NEUTRAL || 
+                              tower.type === 'cannon' || 
+                              tower.type === 'doubleArrow';
 
         // Get element style if tower has an element
         const elementStyle = tower.element && ElementStyles[tower.element] ? 
@@ -1092,24 +1098,24 @@ export class Renderer {
         top.castShadow = true;
         towerGroup.add(top);
         
-        // Add a glow effect to the tower
-        // Use the already defined elementStyle from above
+        // Add a glow effect only to special towers
+        if (isSpecialTower) {
+            // Create glow mesh
+            const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: elementStyle.particleColor,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
             
-        // Create glow mesh
-        const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
-        const glowMaterial = new THREE.MeshBasicMaterial({
-            color: elementStyle.particleColor,
-            transparent: true,
-            opacity: 0.3,
-            side: THREE.BackSide
-        });
-        
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-        glow.position.y = 0.7; // Position at the top part
-        towerGroup.add(glow);
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            glow.position.y = 0.7; // Position at the top part
+            towerGroup.add(glow);
+        }
         
         // For more powerful towers or elemental types, add particle effects
-        if (tower.type === 'cannon' || tower.element !== ElementTypes.NEUTRAL) {
+        if (isSpecialTower) {
             const particleGeometry = new THREE.BufferGeometry();
             const particleCount = 10;
             const particlePositions = new Float32Array(particleCount * 3);
@@ -1510,6 +1516,18 @@ export class Renderer {
         // Update position
         this.previewMesh.position.copy(position);
         this.previewMesh.position.y = 0.0; // Base at ground level
+        
+        // If for some reason the position is at the center of the map (0,0,0) and we're on mobile,
+        // this is likely a phantom preview we should hide
+        if (window.innerWidth <= 768 && 
+            Math.abs(position.x) < 0.01 && 
+            Math.abs(position.z) < 0.01) {
+            this.previewMesh.visible = false;
+            return;
+        }
+        
+        // Otherwise make sure it's visible
+        this.previewMesh.visible = true;
 
         // Update all materials in the preview to reflect valid/invalid placement
         const color = isValidPlacement ? 0x4CAF50 : 0xFF5252;
@@ -1571,12 +1589,54 @@ export class Renderer {
         // Update opacity for better visibility
         this.gridHighlight.material.opacity = isValid ? 0.5 : 0.7;
 
+        // Hide grid highlight if position is at the center of the map (0,0) and we're on mobile,
+        // Similar to what we do with the preview mesh to prevent phantom highlights
+        if (window.innerWidth <= 768 && 
+            Math.abs(gridX - gridSize.width / 2 + 0.5) < 0.01 && 
+            Math.abs(gridY - gridSize.height / 2 + 0.5) < 0.01) {
+            this.gridHighlight.visible = false;
+            return;
+        }
+
         // Show highlight
         this.gridHighlight.visible = true;
     }
 
     hideGridHighlight() {
         this.gridHighlight.visible = false;
+    }
+    
+    cleanupScene() {
+        // Remove all non-essential objects from the scene
+        const objectsToKeep = [];
+        
+        // Keep track of which objects to keep (like ground, lights, grid helpers)
+        this.scene.traverse(object => {
+            // Keep lights
+            if (object.isLight) {
+                objectsToKeep.push(object);
+            }
+            
+            // Keep the ground and path
+            if (object.userData && object.userData.isGround) {
+                objectsToKeep.push(object);
+            }
+            
+            // Keep the grid helper
+            if (object === this.gridHelper || object === this.gridHighlight) {
+                objectsToKeep.push(object);
+            }
+        });
+        
+        // Remove everything else
+        while (this.scene.children.length > 0) {
+            this.scene.remove(this.scene.children[0]);
+        }
+        
+        // Add back the objects we want to keep
+        for (const object of objectsToKeep) {
+            this.scene.add(object);
+        }
     }
 
     createSpecialEffect(type, position) {

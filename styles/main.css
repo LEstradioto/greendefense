@@ -34,20 +34,22 @@ body {
     top: 0;
     left: 0;
     width: 100%;
-    padding: 20px;
+    padding: 8px;
     z-index: 2;
 }
 
 #game-status {
     background-color: rgba(0, 0, 0, 0.8);
-    padding: 12px 16px;
+    padding: 8px;
     border-radius: 10px;
     border: 2px solid #4CAF50;
     display: flex;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-    margin-bottom: 20px;
+    margin-bottom: 8px;
     width: fit-content;
+    max-width: 100%;
 }
 
 @media (max-width: 768px) {
@@ -55,11 +57,21 @@ body {
         padding: 8px 10px;
         gap: 10px;
         margin-bottom: 10px;
-        font-size: 0.9rem;
+        font-size: 0.8rem;
+        justify-content: center;
+        width: 100%;
     }
     
     #ui-container {
         padding: 10px;
+    }
+    
+    #debug-controls {
+        margin-left: 0;
+        margin-top: 8px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
     }
 }
 
@@ -123,17 +135,24 @@ body {
     color: #3498db;
 }
 
+@media (max-width: 768px) {
+    #mana-counter {
+        display: inline-flex !important;
+    }
+}
+
 #tower-selection {
     background-color: rgba(0, 0, 0, 0.8);
-    padding: 10px;
+    padding: 8px;
     border-radius: 10px;
     border: 2px solid #4CAF50;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
     position: absolute;
     top: 80px;
-    left: 10px;
+    left: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
     width: auto;
     max-width: 200px;
@@ -144,13 +163,22 @@ body {
 @media (max-width: 768px) {
     #tower-selection {
         position: fixed;
-        top: auto;
-        bottom: 170px; /* Position above the card container */
-        left: 5px;
-        max-width: 150px;
-        padding: 8px;
-        transform-origin: bottom left;
-        transform: scale(0.9);
+        top: 70px; /* Position right below the top menu */
+        left: 0;
+        right: 0;
+        margin: 0 auto;
+        max-width: 95%;
+        padding: 4px 8px;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap; /* Allow wrapping on mobile */
+        justify-content: space-between;
+        border-radius: 5px;
+        gap: 4px;
+    }
+    
+    .tower-selection-title {
+        display: none; /* Hide title to save space */
     }
 }
 
@@ -170,8 +198,24 @@ body {
 
 @media (max-width: 768px) {
     .tower-option {
-        padding: 6px 10px;
-        font-size: 0.8rem;
+        padding: 4px 5px;
+        font-size: 0.7rem;
+        margin: 1px;
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        justify-content: center;
+        border-width: 1px;
+    }
+    
+    .tower-option span {
+        margin-left: 2px;
+        font-size: 0.65rem;
+    }
+    
+    .tower-option::before {
+        padding: 2px 4px;
+        margin-right: 3px;
     }
 }
 
@@ -233,24 +277,56 @@ body {
         font-size: 0.7rem;
         margin-top: 5px;
         padding-top: 5px;
+        width: 100%;
+        text-align: center;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: space-around;
+        gap: 5px;
     }
     
-    /* Hide the longer instructions on mobile */
-    .tower-instructions br,
-    .key-hint {
+    .tower-instructions div {
+        font-weight: bold;
+        display: inline;
+    }
+    
+    .tower-instructions .mobile-only {
+        font-size: 0.65rem;
+        color: #aaa;
+        width: 100%;
+    }
+    
+    /* Hide desktop-only content on mobile */
+    .desktop-only {
         display: none;
     }
+    
+    /* Show mobile-only content */
+    .mobile-only {
+        display: block;
+    }
+    
+    /* Make tower selection wrap on mobile */
+    #tower-selection {
+        flex-wrap: wrap;
+    }
+}
+
+/* Hide mobile-only content on desktop */
+.mobile-only {
+    display: none;
 }
 
 #power-cards {
     background-color: rgba(0, 0, 0, 0.8);
-    padding: 15px;
+    padding: 8px;
     border-radius: 10px;
     border: 2px solid #4CAF50;
     display: flex;
-    gap: 15px;
+    gap: 8px;
     position: absolute;
-    bottom: 20px;
+    bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
@@ -423,30 +499,45 @@ button:active {
 }
 
 /* TCG Card Styles */
-.card-container {
+#card-container-wrapper {
     position: fixed;
-    bottom: 10px;
+    bottom: 8px;
     left: 50%;
     transform: translateX(-50%);
-    display: flex;
-    gap: 10px;
-    padding: 15px;
-    padding-top: 25px; /* Extra space at top for mana display */
-    background-color: rgba(0, 0, 0, 0.7);
-    border-radius: 10px;
     z-index: 1000;
-    overflow-x: auto;
-    max-width: 90vw; /* Limit width to 90% of viewport */
+    overflow: visible;
+    width: auto;
+    max-width: 90vw;
+    display: flex;
+    justify-content: center;
+}
+
+.card-container {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background-color: transparent !important; /* Force transparency */
+    border-radius: 10px;
+    overflow-x: auto; /* Allow horizontal scrolling */
+    overflow-y: hidden; /* Hide vertical overflow */
+    width: 100%; /* Take full width of the wrapper */
     -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    border: 2px solid #3498db; /* Blue border to highlight it */
+    box-shadow: none !important; /* Force no shadow */
+    border: none !important; /* Force no border */
 }
 
 @media (max-width: 768px) {
     .card-container {
         bottom: 5px;
-        padding: 8px;
-        gap: 6px;
+        padding: 4px 8px;
+        gap: 2px;
+        overflow: visible !important;
+    }
+    
+    #card-container-wrapper {
+        width: 96vw;
+        max-width: 96vw;
+        margin: 0 auto;
     }
 }
 
@@ -468,8 +559,8 @@ button:active {
 
 @media (max-width: 768px) {
     .card {
-        width: 65px;
-        height: 100px;
+        width: 60px;
+        height: 90px;
         padding: 3px;
     }
 }
@@ -515,8 +606,9 @@ button:active {
 
 @media (max-width: 768px) {
     .card-name {
-        font-size: 10px;
+        font-size: 11px;
         margin-bottom: 1px;
+        font-weight: bold;
     }
     
     .card-cost {
@@ -524,21 +616,25 @@ button:active {
         right: 3px;
         width: 16px;
         height: 16px;
-        font-size: 10px;
+        font-size: 11px;
+        font-weight: bold;
     }
     
     .card-stats {
-        font-size: 8px;
+        font-size: 9px;
         margin-bottom: 1px;
+        font-weight: bold;
     }
     
     .card-element {
-        font-size: 8px;
+        font-size: 9px;
         padding: 1px 3px;
         margin-bottom: 1px;
+        font-weight: bold;
     }
 }
 
+/* Simple cursor change for tower placement */
 .tower-placement-mode .game-canvas {
     cursor: crosshair;
 }
@@ -550,16 +646,25 @@ button:active {
 .mana-display {
     position: absolute;
     top: -30px;
-    left: 0;
+    left: 50%;
+    transform: translateX(-50%);
     color: #3498db;
     font-weight: bold;
-    font-size: 18px;
+    font-size: 14px;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
     transition: color 0.5s;
-    background-color: rgba(0, 0, 0, 0.6);
-    padding: 5px 10px;
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 4px 8px;
     border-radius: 5px;
     z-index: 1001;
+    width: auto;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .mana-display {
+        display: none;
+    }
 }
 
 .mana-display.regenerating {
@@ -570,6 +675,88 @@ button:active {
     0% { color: #3498db; }
     50% { color: #2ecc71; }
     100% { color: #3498db; }
+}
+
+/* Life lost animation */
+@keyframes lifeFlash {
+    0% { background-color: rgba(255, 0, 0, 0); }
+    40% { background-color: rgba(255, 0, 0, 0.4); }
+    100% { background-color: rgba(255, 0, 0, 0); }
+}
+
+.life-flash {
+    animation: lifeFlash 0.6s ease;
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+}
+
+/* Game over animation */
+@keyframes gameOverShake {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    10% { transform: translate(-5px, 0) rotate(-2deg); }
+    20% { transform: translate(5px, 0) rotate(2deg); }
+    30% { transform: translate(-5px, 0) rotate(-2deg); }
+    40% { transform: translate(5px, 0) rotate(2deg); }
+    50% { transform: translate(-5px, 0) rotate(-2deg); }
+    60% { transform: translate(5px, 0) rotate(2deg); }
+    70% { transform: translate(-5px, 0) rotate(-2deg); }
+    80% { transform: translate(5px, 0) rotate(2deg); }
+    90% { transform: translate(-5px, 0) rotate(-2deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes gameOverFadeIn {
+    0% { background-color: rgba(0, 0, 0, 0); }
+    100% { background-color: rgba(0, 0, 0, 0.8); }
+}
+
+.game-over-effect {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9998;
+    animation: gameOverFadeIn 2s forwards;
+    pointer-events: none;
+}
+
+.game-over-text {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #FF0000;
+    font-size: 5rem;
+    font-weight: bold;
+    font-family: 'Bangers', cursive;
+    text-shadow: 0 0 10px #FF0000;
+    animation: gameOverShake 0.8s ease;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+/* Fireworks animation */
+.firework {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    box-shadow: 0 0 10px 5px rgba(255, 255, 255, 0.8);
+    animation: fireworkFade 2s ease-out forwards;
+    opacity: 0;
+    transform-origin: center;
+}
+
+@keyframes fireworkFade {
+    0% { transform: scale(0.1); opacity: 1; }
+    40% { opacity: 1; }
+    100% { transform: scale(1.5); opacity: 0; }
 }
 
 /* Debug Panel Styles */

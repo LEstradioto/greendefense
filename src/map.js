@@ -14,6 +14,7 @@ export class Map {
         // 2: Water/obstacle
         // 3: Occupied by tower
         this.grid = [];
+        this.originalGrid = []; // Store original grid for reset
 
         // Path waypoints (for enemy movement)
         this.pathWaypoints = [];
@@ -26,6 +27,7 @@ export class Map {
 
         // 3D representation
         this.mapMesh = null;
+        this.mapGroup = null;
     }
 
     async initialize() {
@@ -33,10 +35,13 @@ export class Map {
         this.createGridData();
 
         // Create 3D representation
-        this.mapMesh = this.game.renderer.createMap(this.grid, {
+        this.mapGroup = this.game.renderer.createMap(this.grid, {
             width: this.gridWidth,
             height: this.gridHeight
         });
+        
+        // Store for easy access
+        this.mapMesh = this.mapGroup;
 
         // Build the pathfinding navmesh
         this.pathfindingHelper.buildNavMesh();
@@ -54,6 +59,42 @@ export class Map {
                 this.pathfindingHelper.toggleNavMeshVisibility();
             }
         });
+        
+        // Store a copy of the original grid for reset
+        this.originalGrid = this.grid.map(row => [...row]);
+    }
+    
+    reset() {
+        // Reset the grid to its original state
+        if (this.originalGrid.length > 0) {
+            this.grid = this.originalGrid.map(row => [...row]);
+        } else {
+            // If we don't have an original grid, recreate it
+            this.grid = [];
+            this.createGridData();
+        }
+        
+        // Rebuild the pathfinding navmesh
+        this.pathfindingHelper.buildNavMesh();
+        
+        // Recreate path waypoints
+        this.recreatePathWaypoints();
+    }
+    
+    recreatePathWaypoints() {
+        // Clear existing waypoints
+        this.pathWaypoints = [];
+        
+        // We'll use the same approach as in createPathWaypoints but without async
+        // This is a simplified version just for reset purposes
+        
+        // For simplicity, create a direct line from top to bottom
+        const startPoint = this.getStartPoint();
+        const endPoint = this.getEndPoint();
+        
+        // Add these two points as waypoints
+        this.pathWaypoints.push(startPoint);
+        this.pathWaypoints.push(endPoint);
     }
 
     createGridData() {

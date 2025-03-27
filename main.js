@@ -38,10 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('After hiding, classes:', overlay.className);
     });
 
-    // Setup the restart button event listener
-    document.getElementById('restart-button').addEventListener('click', () => {
-        location.reload(); // Simple restart by reloading the page
-    });
+    // We'll handle the restart button in the Game class
+    // Do not reload the page as we want to maintain the game state properly
 
     // Setup keyboard controls
     window.addEventListener('keydown', (event) => {
