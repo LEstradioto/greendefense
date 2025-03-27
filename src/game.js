@@ -53,14 +53,30 @@ export class Game {
     }
 
     async start(username) {
+        // Clean up any previous game state first
+        if (this.gameStarted) {
+            // If restarting, ensure we clean up properly
+            this.clearAllEntities();
+            if (this.renderer) {
+                this.renderer.cleanupScene();
+            }
+        }
+        
         this.player.username = username;
         this.gameStarted = true;
         this.gameOver = false;
         this.lastFrameTime = performance.now();
+        
+        // Make sure map is initialized
         await this.map.initialize();
         
         // Initialize TCG system
-        this.tcgIntegration = new TCGIntegration(this);
+        if (!this.tcgIntegration) {
+            this.tcgIntegration = new TCGIntegration(this);
+        } else {
+            // Reset existing TCG integration
+            this.tcgIntegration.reset();
+        }
         
         // Initialize UI if it wasn't created yet (in case this was called directly)
         if (!this.ui) {
@@ -76,6 +92,8 @@ export class Game {
         // Start the game loop
         requestAnimationFrame(this.update);
 
+        console.log("Game started for player:", username);
+        
         // Start the first wave after a short delay
         setTimeout(() => {
             this.startWave();
@@ -549,10 +567,15 @@ export class Game {
     }
 
     resetGameState() {
-        // Reset game properties for a new game
-        this.enemies = [];
-        this.towers = [];
-        this.projectiles = [];
+        // Clean up any remaining meshes in the scene first
+        // This prevents duplicate map generation
+        if (this.renderer && this.renderer.scene) {
+            // Keep only essential elements (ground, lights)
+            this.renderer.cleanupScene();
+        }
+        
+        // Clear all game entities
+        this.clearAllEntities();
         
         // Reset player stats
         this.player.gold = 100;
@@ -572,21 +595,47 @@ export class Game {
         // Reset the UI
         this.updateUI();
         
-        // Clean up any remaining meshes in the scene
-        if (this.renderer && this.renderer.scene) {
-            // Keep only essential elements (ground, lights)
-            this.renderer.cleanupScene();
-        }
-        
         // Reset the map
         if (this.map) {
+            console.log("Resetting map with dimensions:", this.map.gridWidth, "x", this.map.gridHeight);
             this.map.reset();
+            console.log("Map reset complete, dimensions now:", this.map.gridWidth, "x", this.map.gridHeight);
         }
         
         // Reset TCG if active
         if (this.tcgIntegration) {
             this.tcgIntegration.reset();
         }
+        
+        console.log("Game state reset completed");
+    }
+    
+    clearAllEntities() {
+        // Clean up all entities properly
+        
+        // Clean up enemies
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            if (this.enemies[i].mesh) {
+                this.renderer.scene.remove(this.enemies[i].mesh);
+            }
+        }
+        this.enemies = [];
+        
+        // Clean up towers
+        for (let i = this.towers.length - 1; i >= 0; i--) {
+            if (this.towers[i].mesh) {
+                this.renderer.scene.remove(this.towers[i].mesh);
+            }
+        }
+        this.towers = [];
+        
+        // Clean up projectiles
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            if (this.projectiles[i].mesh) {
+                this.renderer.scene.remove(this.projectiles[i].mesh);
+            }
+        }
+        this.projectiles = [];
     }
     
     endGame(isVictory) {
@@ -657,10 +706,13 @@ export class Game {
     toggleDebugMode() {
         this.debugMode = !this.debugMode;
         
-        // Update path visualization visibility
+        // Update path visualization visibility only in debug mode
         if (this.map && this.map.pathVisualization) {
             this.map.pathVisualization.visible = this.debugMode;
         }
+        
+        // Log debug mode state
+        console.log(`Debug mode ${this.debugMode ? 'enabled' : 'disabled'}`);
     }
     
     toggleCardDebugMode() {
@@ -988,11 +1040,11 @@ export class Game {
         
         const message = `Wave ${this.currentWave} Complete! +${amount} Gold`;
         
-        // Create a text canvas
+        // Create a text canvas with more width to avoid text cutting
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        canvas.width = 512;
-        canvas.height = 128;
+        canvas.width = 1024; // Doubled width to prevent text from being cut off
+        canvas.height = 256;  // Increased height for better positioning
         
         // Clear canvas
         context.fillStyle = 'rgba(0, 0, 0, 0)';
@@ -1002,6 +1054,10 @@ export class Game {
         context.font = 'Bold 48px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
+        
+        // Measure text width to ensure it fits
+        const textWidth = context.measureText(message).width;
+        console.log("Wave message width:", textWidth, "Canvas width:", canvas.width);
         
         // Add glow effect
         context.shadowColor = '#FFD700';
@@ -1023,7 +1079,7 @@ export class Game {
         const sprite = new THREE.Sprite(spriteMaterial);
         // Position in center of map
         sprite.position.set(0, 5, 0); 
-        sprite.scale.set(10, 2.5, 1);
+        sprite.scale.set(15, 3.75, 1); // Increased scale to match bigger canvas
         
         this.renderer.scene.add(sprite);
         

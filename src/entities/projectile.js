@@ -411,15 +411,26 @@ export class Projectile {
     }
     
     isOutOfBounds() {
-        // Check if projectile is outside of map bounds
+        // Check if projectile is outside of map bounds (more strict boundaries)
         const mapWidth = this.game.map.gridWidth;
         const mapHeight = this.game.map.gridHeight;
         
-        return (
-            this.position.x < -mapWidth / 2 - 5 ||
-            this.position.x > mapWidth / 2 + 5 ||
-            this.position.z < -mapHeight / 2 - 5 ||
-            this.position.z > mapHeight / 2 + 5
+        // Also check if the projectile has gone too far vertically (up or down)
+        const outOfBounds = (
+            this.position.x < -mapWidth / 2 - 2 ||
+            this.position.x > mapWidth / 2 + 2 ||
+            this.position.z < -mapHeight / 2 - 2 ||
+            this.position.z > mapHeight / 2 + 2 ||
+            this.position.y < -5 ||
+            this.position.y > 20
         );
+        
+        // If out of bounds, clean up the mesh
+        if (outOfBounds && this.mesh) {
+            this.game.renderer.scene.remove(this.mesh);
+            this.mesh = null;
+        }
+        
+        return outOfBounds;
     }
 }

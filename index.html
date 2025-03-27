@@ -30,6 +30,20 @@
                         <label><input type="checkbox" id="debug-infinite-mana"> Infinite Mana</label>
                     </div>
                     <div class="debug-section">
+                        <div class="section-title">Grid Style Options</div>
+                        <div class="grid-style-controls">
+                            <label><input type="radio" name="grid-style" id="grid-style-default" checked> Default Style</label>
+                            <label><input type="radio" name="grid-style" id="grid-style-borders"> Green Borders Only</label>
+                            <label><input type="radio" name="grid-style" id="grid-style-opacity"> High Opacity Green</label>
+                            <label><input type="radio" name="grid-style" id="grid-style-neon"> Neon Green Effect</label>
+                        </div>
+                        <div class="grid-options">
+                            <label>Grid Brightness: <input type="range" id="grid-brightness" min="0" max="100" value="50"></label>
+                            <label>Path Color: <input type="color" id="path-color" value="#8B4513"></label>
+                            <label>Ground Color: <input type="color" id="ground-color" value="#2ECC71"></label>
+                        </div>
+                    </div>
+                    <div class="debug-section">
                         <div class="section-title">Enemy Spawning</div>
                         <div class="debug-enemy-controls">
                             <button id="spawn-simple">Simple</button>

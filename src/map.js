@@ -1,4 +1,5 @@
 import { EasyStarPathfinding } from './easyStarPathfinding.js';
+import * as THREE from 'three';
 
 export class Map {
     constructor(game) {
@@ -7,6 +8,8 @@ export class Map {
         // Grid dimensions
         this.gridWidth = 15;
         this.gridHeight = 25;
+        this.originalGridWidth = this.gridWidth; // Store original dimensions for reset
+        this.originalGridHeight = this.gridHeight;
 
         // Grid cell types
         // 0: Empty (placeable)
@@ -65,12 +68,21 @@ export class Map {
     }
     
     reset() {
+        // Reset the grid dimensions to original values
+        if (this.gridWidth !== this.originalGridWidth || this.gridHeight !== this.originalGridHeight) {
+            console.log(`Resetting grid dimensions from ${this.gridWidth}x${this.gridHeight} to ${this.originalGridWidth}x${this.originalGridHeight}`);
+            this.gridWidth = this.originalGridWidth;
+            this.gridHeight = this.originalGridHeight;
+        }
+        
+        // Clear the current grid completely
+        this.grid = [];
+        
         // Reset the grid to its original state
         if (this.originalGrid.length > 0) {
             this.grid = this.originalGrid.map(row => [...row]);
         } else {
             // If we don't have an original grid, recreate it
-            this.grid = [];
             this.createGridData();
         }
         
@@ -79,6 +91,9 @@ export class Map {
         
         // Recreate path waypoints
         this.recreatePathWaypoints();
+        
+        // We DON'T recreate the map mesh here as that's handled by the renderer.cleanupScene
+        // and will be created when the game starts again
     }
     
     recreatePathWaypoints() {
@@ -98,10 +113,17 @@ export class Map {
     }
 
     createGridData() {
+        // Make sure we're using the correct dimensions
+        const gridWidth = this.gridWidth;
+        const gridHeight = this.gridHeight;
+        
+        // Clear the grid first to prevent duplication
+        this.grid = [];
+        
         // Initialize grid with all path cells (walkable)
-        for (let z = 0; z < this.gridHeight; z++) {
+        for (let z = 0; z < gridHeight; z++) {
             const row = [];
-            for (let x = 0; x < this.gridWidth; x++) {
+            for (let x = 0; x < gridWidth; x++) {
                 // Make the entire map walkable (1)
                 row.push(1); // Everything is walkable by default
             }
@@ -109,20 +131,20 @@ export class Map {
         }
 
         // Add all cells along the top as entry points (z=0)
-        for (let x = 0; x < this.gridWidth; x++) {
+        for (let x = 0; x < gridWidth; x++) {
             this.grid[0][x] = 1; // Mark as path
         }
 
         // Add all cells along the bottom as exit points (z=gridHeight-1)
-        for (let x = 0; x < this.gridWidth; x++) {
-            this.grid[this.gridHeight - 1][x] = 1; // Mark as path
+        for (let x = 0; x < gridWidth; x++) {
+            this.grid[gridHeight - 1][x] = 1; // Mark as path
         }
         
         // Add restricted rows at the bottom (last 3 rows before the very bottom)
-        for (let z = this.gridHeight - 4; z < this.gridHeight - 1; z++) {
-            for (let x = 0; x < this.gridWidth; x++) {
+        for (let z = gridHeight - 4; z < gridHeight - 1; z++) {
+            for (let x = 0; x < gridWidth; x++) {
                 // Set cells as path (1) but we'll prevent tower placement in the game logic
-                if (x > 0 && x < this.gridWidth - 1) {
+                if (x > 0 && x < gridWidth - 1) {
                     this.grid[z][x] = 1;
                 }
             }
@@ -156,8 +178,13 @@ export class Map {
     }
 
     createPathVisualization() {
+        // Remove old visualization
         if (this.pathVisualization) {
             this.game.renderer.scene.remove(this.pathVisualization);
+            // Dispose of geometry and material to prevent memory leaks
+            if (this.pathVisualization.geometry) this.pathVisualization.geometry.dispose();
+            if (this.pathVisualization.material) this.pathVisualization.material.dispose();
+            this.pathVisualization = null;
         }
 
         // Convert grid waypoints to world positions if not already converted
@@ -167,17 +194,27 @@ export class Map {
             });
         }
 
-        // Create a line to visualize the path
-        const points = this.worldPathWaypoints.map(p => {
-            return new THREE.Vector3(p.x, 0.2, p.z); // Slightly above ground
-        });
-
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ color: 0xFFFF00, linewidth: 2 });
-
-        this.pathVisualization = new THREE.Line(geometry, material);
-        this.pathVisualization.visible = this.game.debugMode; // Only visible in debug mode
-        this.game.renderer.scene.add(this.pathVisualization);
+        // For the minimalist design, we'll skip creating the actual visualization line
+        // This creates an empty object that can be toggled in debug mode but won't show anything
+        // Only when explicitly requested we'll create a visible line
+        if (this.game.debugMode) {
+            // Create a line to visualize the path
+            const points = this.worldPathWaypoints.map(p => {
+                return new THREE.Vector3(p.x, 0.2, p.z); // Slightly above ground
+            });
+    
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xFFFF00, linewidth: 2 });
+    
+            this.pathVisualization = new THREE.Line(geometry, material);
+            this.pathVisualization.visible = this.game.debugMode; // Only visible in debug mode
+            this.game.renderer.scene.add(this.pathVisualization);
+        } else {
+            // Create an empty group as a placeholder (won't be visible)
+            this.pathVisualization = new THREE.Group();
+            this.pathVisualization.visible = false;
+            this.game.renderer.scene.add(this.pathVisualization);
+        }
     }
 
     getPathWaypoints() {

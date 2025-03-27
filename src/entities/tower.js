@@ -35,11 +35,11 @@ export class Tower {
         this.mesh = this.game.renderer.createTower(this);
 
         // Set the position of the tower mesh
-        // Position the tower with the base at ground level (y=0)
-        // and center of tower at grid position
+        // Position the tower directly at the grid position
+        // The tower foundation is built to sit on the ground
         this.mesh.position.set(
             position.x,
-            this.height / 2, // Place the tower so its bottom is at ground level
+            0, // Place directly at ground level - foundation will extend below
             position.z
         );
 

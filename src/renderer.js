@@ -9,14 +9,23 @@ export class Renderer {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-        // Set up renderer
+        // Set up renderer with enhanced quality settings
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
-            antialias: true
+            antialias: true,
+            powerPreference: 'high-performance',
+            alpha: true,
+            preserveDrawingBuffer: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x000000); // Black background
+        
+        // Enhanced shadow settings
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadow edges
+        this.renderer.physicallyCorrectLights = true; // More accurate light attenuation
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.0;
 
         // Set up camera
         this.camera.position.set(0, 50, 40);
@@ -27,6 +36,29 @@ export class Renderer {
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.25;
         this.controls.maxPolarAngle = Math.PI / 2.5; // Limit camera angle
+        
+        // Add rotation tracking to prevent tower placement during rotation
+        this.isRotating = false;
+        this.lastControlsUpdate = Date.now();
+        
+        // Add event listeners to track when rotation starts and ends
+        this.controls.addEventListener('start', () => {
+            this.isRotating = true;
+            this.lastControlsUpdate = Date.now();
+            console.log("Camera controls started");
+        });
+        
+        this.controls.addEventListener('end', () => {
+            // End rotation state immediately - allows for quicker tower placement
+            this.isRotating = false;
+            console.log("Camera controls ended");
+        });
+        
+        // Also track control updates to detect rotation
+        this.controls.addEventListener('change', () => {
+            this.isRotating = true;
+            this.lastControlsUpdate = Date.now();
+        });
 
         // Set up lights
         this.setupLights();
@@ -75,10 +107,11 @@ export class Renderer {
             projectile: new THREE.MeshBasicMaterial({ 
                 color: 0x76FF03, // Light green
             }),
-            gridHighlight: new THREE.MeshBasicMaterial({
+            gridHighlight: new THREE.LineBasicMaterial({
                 color: 0x4CAF50,
                 transparent: true,
-                opacity: 0.7
+                opacity: 0.9,
+                linewidth: 3
             }),
             grid: new THREE.LineBasicMaterial({ 
                 color: 0x4CAF50, 
@@ -96,55 +129,104 @@ export class Renderer {
         // Tower placement preview mesh
         this.previewMesh = null;
 
-        // Grid cell highlight for tower placement
-        this.gridHighlight = new THREE.Mesh(
-            new THREE.PlaneGeometry(1, 1),
-            this.materials.gridHighlight
-        );
-        this.gridHighlight.rotation.x = -Math.PI / 2; // Rotate to horizontal
-        this.gridHighlight.position.y = 0.02; // Slightly above ground to prevent z-fighting
+        // Create a different style of grid highlighter that won't cause shading issues
+        // Instead of a flat plane, we'll use a wireframe square outline
+        const highlightGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.05, 0.01, 1.05));
+        const highlightMaterial = new THREE.LineBasicMaterial({ 
+            color: 0x4CAF50,
+            linewidth: 3, 
+            transparent: true,
+            opacity: 0.9,
+        });
+        
+        this.gridHighlight = new THREE.LineSegments(highlightGeometry, highlightMaterial);
+        this.gridHighlight.position.y = 0.01; // Just above ground
         this.gridHighlight.visible = false;
+        this.gridHighlight.renderOrder = 100; // Very high render order to ensure it's on top
         this.scene.add(this.gridHighlight);
     }
 
     setupLights() {
-        // Ambient light - slightly greenish tint for cartoon effect
-        const ambientLight = new THREE.AmbientLight(0xc0ffc0, 0.4);
+        // Create a more dramatic lighting setup for better shadows
+        
+        // Very low ambient light - for stronger shadows
+        const ambientLight = new THREE.AmbientLight(0xc0ffc0, 0.2); // Reduced intensity for stronger shadows
         this.scene.add(ambientLight);
 
-        // Main directional light (sunlight) - warmer tone
-        const directionalLight = new THREE.DirectionalLight(0xfffaf0, 1.0);
-        directionalLight.position.set(10, 20, 10);
+        // Main directional light (sunlight) with very strong intensity
+        const directionalLight = new THREE.DirectionalLight(0xfffaf0, 1.5); // Higher intensity
+        directionalLight.position.set(15, 40, 15); // Higher and more angled for longer shadows
         directionalLight.castShadow = true;
 
-        // Adjust shadow properties for better quality
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
+        // Adjust shadow properties for maximum quality
+        directionalLight.shadow.mapSize.width = 4096; // Very high resolution shadow map
+        directionalLight.shadow.mapSize.height = 4096;
         directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 50;
-        directionalLight.shadow.camera.left = -15;
-        directionalLight.shadow.camera.right = 15;
-        directionalLight.shadow.camera.top = 15;
-        directionalLight.shadow.camera.bottom = -15;
+        directionalLight.shadow.camera.far = 80; // Extended range
+        directionalLight.shadow.camera.left = -30;
+        directionalLight.shadow.camera.right = 30;
+        directionalLight.shadow.camera.top = 30;
+        directionalLight.shadow.camera.bottom = -30;
+        
+        // Improve shadow quality and darkness
+        directionalLight.shadow.bias = -0.0001; // Reduces shadow acne
+        directionalLight.shadow.normalBias = 0.01; // Helps with thin objects 
+        directionalLight.shadow.darkness = 0.8; // More intense shadow darkness
+        
         this.scene.add(directionalLight);
         
+        // Store for debugging purposes
+        this.mainLight = directionalLight;
+        
+        // Add a helper to visualize the light (only in debug mode)
+        const helper = new THREE.CameraHelper(directionalLight.shadow.camera);
+        helper.visible = false;
+        this.scene.add(helper);
+        this.shadowHelper = helper;
+        
         // Add a secondary fill light from the opposite side (cooler tone)
-        const fillLight = new THREE.DirectionalLight(0xc0e0ff, 0.5);
-        fillLight.position.set(-10, 15, -10);
+        const fillLight = new THREE.DirectionalLight(0xc0e0ff, 0.4);
+        fillLight.position.set(-15, 20, -15);
+        // Don't add shadows for fill light (simplifies shadow rendering)
         this.scene.add(fillLight);
+        
+        // Add spot light for dramatic tower shadows
+        const spotLight = new THREE.SpotLight(0xffffff, 0.8);
+        spotLight.position.set(0, 25, 5);
+        spotLight.angle = Math.PI / 4;
+        spotLight.penumbra = 0.1;
+        spotLight.decay = 1;
+        spotLight.distance = 80;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.shadow.camera.near = 1;
+        spotLight.shadow.camera.far = 80;
+        this.scene.add(spotLight);
         
         // Add subtle rim light for cartoon effect
         const rimLight = new THREE.DirectionalLight(0x80ff80, 0.3);
-        rimLight.position.set(0, 10, -15);
+        rimLight.position.set(0, 10, -20);
         this.scene.add(rimLight);
     }
 
     render(game) {
         // Update camera controls
         this.controls.update();
+        
+        // Update rotation state - if it's been more than 50ms since a control update,
+        // we can consider the rotation to have stopped (much more responsive)
+        if (this.isRotating && (Date.now() - this.lastControlsUpdate > 50)) {
+            this.isRotating = false;
+        }
 
         // Toggle debug helpers
         this.gridHelper.visible = game.debugMode;
+        
+        // Toggle shadow camera helper in debug mode
+        if (this.shadowHelper) {
+            this.shadowHelper.visible = game.debugMode;
+        }
         
         // Get current time
         const currentTime = performance.now() / 1000; // Convert to seconds for easier animation timing
@@ -200,6 +282,27 @@ export class Renderer {
         
         // Animate projectile trails
         game.projectiles.forEach(projectile => {
+            // First update the shadow projector if it exists
+            if (projectile.mesh && projectile.mesh.userData.shadowProjector) {
+                const shadowPlane = projectile.mesh.userData.shadowProjector;
+                const currentPos = projectile.mesh.position;
+                
+                // Project the shadow onto the ground
+                shadowPlane.position.x = currentPos.x;
+                shadowPlane.position.y = 0.01; // Just above ground
+                shadowPlane.position.z = currentPos.z;
+                
+                // Scale shadow based on height (further = smaller shadow)
+                const distance = Math.max(0.5, currentPos.y);
+                const scale = 0.3 + (0.7 / distance); // Inverse scale with height
+                shadowPlane.scale.set(scale, scale, 1);
+                
+                // Fade shadow with height
+                const opacity = Math.min(0.5, 0.5 / distance);
+                shadowPlane.material.opacity = opacity;
+            }
+            
+            // Then update particles if they exist
             if (projectile.mesh && projectile.mesh.userData.particles) {
                 const particles = projectile.mesh.userData.particles;
                 const positions = particles.geometry.attributes.position.array;
@@ -362,10 +465,26 @@ export class Renderer {
         if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer) {
             const glowLayer = game.map.mapGroup.userData.glowLayer;
             
-            // Very slow pulsing for the ground glow
-            const pulseAmount = 0.03;
-            const pulseSpeed = 0.2; // Very slow pulse
-            glowLayer.material.opacity = 0.07 + pulseAmount * Math.sin(currentTime * pulseSpeed);
+            // More pronounced pulsing for the ground glow
+            const pulseAmount = 0.05;
+            const pulseSpeed = 0.3; // Slightly faster pulse
+            glowLayer.material.opacity = 0.12 + pulseAmount * Math.sin(currentTime * pulseSpeed);
+            
+            // Also pulse the color slightly to enhance the effect
+            const hue = 0.35 + 0.02 * Math.sin(currentTime * pulseSpeed * 0.7); // Subtle hue shift around green
+            glowLayer.material.color.setHSL(hue, 0.8, 0.6);
+        }
+        
+        // Adjust any dynamic shadow parameters
+        if (this.mainLight && this.mainLight.shadow) {
+            // Keep shadows strong and crisp
+            this.mainLight.shadow.bias = -0.0001;
+            
+            // Optional: adjust shadow strength dynamically
+            const shadowStrength = 0.8; // Higher values = stronger shadows (0-1)
+            if (this.mainLight.shadow.darkness !== undefined) { // Some THREE.js versions use this
+                this.mainLight.shadow.darkness = shadowStrength;
+            }
         }
         
         // Render scene
@@ -375,118 +494,201 @@ export class Renderer {
     createMap(mapData, gridSize) {
         const mapGroup = new THREE.Group();
 
-        // Create ground with more detail for grass appearance
-        const groundGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, 32, 32);
+        // Create a single seamless ground plane - no segments to avoid the middle line
+        const groundGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, 1, 1); // Use just 1 segment
         
-        // Create ground mesh with cartoon-style grass material with subtle glow
+        // Create ground mesh with darker material for better shadow visibility
         const groundMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x2E8B57, // Sea green
-            roughness: 0.7,
-            metalness: 0.2,
-            emissive: 0x1E6E3E, // Darker green for emissive
-            emissiveIntensity: 0.2 // Subtle emissive glow
+            color: 0x2c8e43, // Darker green to show shadows better
+            roughness: 1.0,  // Maximum roughness for shadow visibility
+            metalness: 0.0,  // No metalness
+            emissive: 0x0, // No emissive
+            emissiveIntensity: 0, // No emissive glow
+            side: THREE.FrontSide, // Only render front side
+            depthWrite: true // Ensure proper depth writing
         });
         
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         
-        // Add subtle vertex displacement for grass texture effect
-        const vertices = ground.geometry.attributes.position.array;
-        for (let i = 0; i < vertices.length; i += 3) {
-            // Don't modify X or Z coordinates (i, i+2), only Y (i+1)
-            // Add very small random displacement for grass effect
-            vertices[i+1] = (Math.random() * 0.05); 
-        }
-        
-        // Update geometry
-        ground.geometry.attributes.position.needsUpdate = true;
-        ground.geometry.computeVertexNormals();
+        // No vertex displacement - keeping it flat helps with shadow rendering
         
         ground.rotation.x = -Math.PI / 2; // Rotate to horizontal
-        ground.receiveShadow = true;
+        ground.position.y = 0; // EXACTLY at zero - critical for proper shading
+        ground.receiveShadow = true; // Make ground receive shadows
+        
         mapGroup.add(ground);
         
-        // Add a subtle glow layer above the ground for cartoonish effect
+        // Add a subtle green glow layer above the ground, very faint to not interfere with shadows
         const glowGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
         const glowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x66FF99,
+            color: 0x4AFF8D, // Bright mint green color
             transparent: true,
-            opacity: 0.07,
+            opacity: 0.05, // Very faint glow to ensure shadows are visible
             blending: THREE.AdditiveBlending
         });
         
         const glowLayer = new THREE.Mesh(glowGeometry, glowMaterial);
         glowLayer.rotation.x = -Math.PI / 2; // Rotate to horizontal
-        glowLayer.position.y = 0.03; // Slightly above ground
+        glowLayer.position.y = 0.05; // Higher above ground to avoid interference
+        glowLayer.renderOrder = 1; // Ensure it renders after the ground
         mapGroup.add(glowLayer);
         
         // Store reference for animation
         mapGroup.userData.glowLayer = glowLayer;
-
-        // Create special material for restricted area
-        const restrictedMaterial = new THREE.MeshStandardMaterial({
-            color: 0xFF6347, // Tomato red
+        
+        // Create a dark gray overlay for the play area
+        const playAreaGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
+        const playAreaMaterial = new THREE.MeshBasicMaterial({
+            color: 0x222222, // Dark gray
             transparent: true,
-            opacity: 0.5,
-            roughness: 0.8,
+            opacity: 0.3,    // Lighter overlay to allow shadows to be visible
+            side: THREE.DoubleSide,
+            depthWrite: false // Don't write to depth buffer - important for shadow visibility
+        });
+        
+        const playArea = new THREE.Mesh(playAreaGeometry, playAreaMaterial);
+        playArea.rotation.x = -Math.PI / 2; // Rotate to horizontal
+        playArea.position.y = 0.1; // Higher above ground to prevent z-fighting
+        playArea.renderOrder = 2; // Ensure proper rendering order
+        mapGroup.add(playArea);
+        
+        // Create a neon green border around the play area
+        const borderGroup = new THREE.Group();
+        mapGroup.userData.gridLines = borderGroup; // Store for style updates
+        
+        // Border line parameters
+        const borderColor = 0x1aff6e; // Bright neon green
+        const borderOpacity = 0.7;    // Very visible
+        const borderWidth = 3;        // Thicker for visibility
+        
+        // Create border lines for each edge
+        const edges = [
+            // Bottom edge
+            [
+                new THREE.Vector3(-gridSize.width/2, 0.06, -gridSize.height/2),
+                new THREE.Vector3(gridSize.width/2, 0.06, -gridSize.height/2)
+            ],
+            // Right edge
+            [
+                new THREE.Vector3(gridSize.width/2, 0.06, -gridSize.height/2),
+                new THREE.Vector3(gridSize.width/2, 0.06, gridSize.height/2)
+            ],
+            // Top edge
+            [
+                new THREE.Vector3(gridSize.width/2, 0.06, gridSize.height/2),
+                new THREE.Vector3(-gridSize.width/2, 0.06, gridSize.height/2)
+            ],
+            // Left edge
+            [
+                new THREE.Vector3(-gridSize.width/2, 0.06, gridSize.height/2),
+                new THREE.Vector3(-gridSize.width/2, 0.06, -gridSize.height/2)
+            ]
+        ];
+        
+        // Create all border lines
+        edges.forEach(points => {
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: borderColor,
+                transparent: true,
+                opacity: borderOpacity,
+                linewidth: borderWidth // Note: linewidth has limited browser support
+            });
+            
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            borderGroup.add(line);
+        });
+        
+        mapGroup.add(borderGroup);
+        
+        // Create a glow effect for the border
+        const borderGlowGeometry = new THREE.PlaneGeometry(gridSize.width + 0.2, gridSize.height + 0.2);
+        const borderGlowMaterial = new THREE.MeshBasicMaterial({
+            color: borderColor,
+            transparent: true,
+            opacity: 0.1,
+            side: THREE.DoubleSide
+        });
+        
+        const borderGlow = new THREE.Mesh(borderGlowGeometry, borderGlowMaterial);
+        borderGlow.rotation.x = -Math.PI / 2; // Rotate to horizontal
+        borderGlow.position.y = 0.04; // Just below the border lines
+        mapGroup.userData.borderGlow = borderGlow;
+        mapGroup.add(borderGlow);
+        
+        // Store style properties for border effect modification
+        mapGroup.userData.gridStyleProperties = {
+            defaultColor: borderColor,
+            defaultOpacity: borderOpacity,
+            currentStyle: 'default',
+            brightness: 0.7
+        };
+
+        // This material definition is unused now that we're using strips
+
+        // Only create special indicator tiles for entry, exit and restricted areas
+        // Create horizontal strips for entry and exit points instead of individual tiles
+        
+        // Entry strip (top)
+        const entryMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4169E1, // Royal Blue
+            transparent: true,
+            opacity: 0.3,
+            roughness: 0.7,
             metalness: 0.1
         });
-
-        // Create path tiles
-        for (let z = 0; z < mapData.length; z++) {
-            for (let x = 0; x < mapData[z].length; x++) {
-                const cell = mapData[z][x];
-
-                // Skip empty cells
-                if (cell === 0) continue;
-
-                // Create appropriate tile based on cell type
-                let tileMaterial;
-
-                if (cell === 1) { // Path
-                    // Check if this is in entry, exit or restricted area
-                    if (z === 0) {
-                        // Entry area - use a distinct color
-                        tileMaterial = new THREE.MeshStandardMaterial({
-                            color: 0x4169E1, // Royal Blue
-                            transparent: true,
-                            opacity: 0.6,
-                            roughness: 0.8,
-                            metalness: 0.1
-                        });
-                    } else if (z === mapData.length - 1) {
-                        // Exit area - use a distinct color
-                        tileMaterial = new THREE.MeshStandardMaterial({
-                            color: 0x9932CC, // Dark Orchid
-                            transparent: true,
-                            opacity: 0.6,
-                            roughness: 0.8,
-                            metalness: 0.1
-                        });
-                    } else if (z >= mapData.length - 4 && z < mapData.length - 1) {
-                        // Restricted area
-                        tileMaterial = restrictedMaterial;
-                    } else {
-                        tileMaterial = this.materials.path;
-                    }
-                } else if (cell === 2) { // Water/obstacle
-                    tileMaterial = this.materials.water;
-                } else {
-                    continue; // Skip other cell types
-                }
-
-                const tileGeometry = new THREE.BoxGeometry(0.95, 0.1, 0.95);
-                const tile = new THREE.Mesh(tileGeometry, tileMaterial);
-
-                // Position tile in grid
-                tile.position.set(
-                    x - gridSize.width / 2 + 0.5,
-                    0.05, // Slightly above ground
-                    z - gridSize.height / 2 + 0.5
-                );
-
-                tile.receiveShadow = true;
-                mapGroup.add(tile);
-            }
+        
+        // Create a single horizontal strip for the entry area
+        const entryStripGeometry = new THREE.BoxGeometry(gridSize.width, 0.05, 1);
+        const entryStrip = new THREE.Mesh(entryStripGeometry, entryMaterial);
+        entryStrip.position.set(
+            0, // Centered horizontally
+            0.03, // Very close to ground
+            -gridSize.height / 2 + 0.5 // Top of the grid
+        );
+        entryStrip.receiveShadow = true;
+        mapGroup.add(entryStrip);
+        
+        // Exit strip (bottom)
+        const exitMaterial = new THREE.MeshStandardMaterial({
+            color: 0x9932CC, // Dark Orchid
+            transparent: true,
+            opacity: 0.3,
+            roughness: 0.7,
+            metalness: 0.1
+        });
+        
+        // Create a single horizontal strip for the exit area
+        const exitStripGeometry = new THREE.BoxGeometry(gridSize.width, 0.05, 1);
+        const exitStrip = new THREE.Mesh(exitStripGeometry, exitMaterial);
+        exitStrip.position.set(
+            0, // Centered horizontally
+            0.03, // Very close to ground
+            gridSize.height / 2 - 0.5 // Bottom of the grid
+        );
+        exitStrip.receiveShadow = true;
+        mapGroup.add(exitStrip);
+        
+        // Restricted area - create a strip for each row in the restricted zone instead of individual tiles
+        const restrictedZoneMaterial = new THREE.MeshStandardMaterial({
+            color: 0xFF6347, // Tomato red
+            transparent: true,
+            opacity: 0.25, // More subtle
+            roughness: 0.7,
+            metalness: 0.1
+        });
+        
+        // Create strips for each row in the restricted area (last 3 rows before the bottom)
+        for (let i = 1; i <= 3; i++) {
+            const restrictedStripGeometry = new THREE.BoxGeometry(gridSize.width, 0.05, 1);
+            const restrictedStrip = new THREE.Mesh(restrictedStripGeometry, restrictedZoneMaterial);
+            restrictedStrip.position.set(
+                0, // Centered horizontally
+                0.03, // Very close to ground
+                gridSize.height / 2 - 0.5 - i // Position from bottom (skipping bottom row which is exit)
+            );
+            restrictedStrip.receiveShadow = true;
+            mapGroup.add(restrictedStrip);
         }
 
         this.scene.add(mapGroup);
@@ -500,6 +702,9 @@ export class Renderer {
         // Extract base type and element
         let baseType = enemy.type;
         let elementType = 'neutral';
+        
+        // Set up shadow properties for all enemies
+        this.enemyShadowIntensity = 0.95; // Make shadows very strong
         
         // Check if enemy type contains an element
         const elements = ['fire', 'water', 'earth', 'air', 'shadow'];
@@ -617,8 +822,32 @@ export class Renderer {
                 }
         }
 
+        // Force shadow casting on all enemy materials
+        if (material) {
+            material.shadowSide = THREE.FrontSide; // Force proper shadow rendering
+            material.transparent = true; // Ensure transparency works with shadows
+            material.opacity = 0.95; // Very subtle transparency to improve shadow quality
+        }
+        
         const mesh = new THREE.Mesh(geometry, material);
+        // Enhanced shadow settings for enemies
         mesh.castShadow = true;
+        mesh.receiveShadow = true; // Allow enemies to receive shadows from other objects
+        
+        // Add a dark shadow plane below the enemy that moves with it
+        const shadowSize = 0.6; // Size of shadow plane
+        const shadowPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(shadowSize, shadowSize),
+            new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.4, // Dark but see-through shadow
+                depthWrite: false // Prevent z-fighting
+            })
+        );
+        shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
+        shadowPlane.position.y = -0.49; // Just above ground level
+        mesh.add(shadowPlane); // Add to enemy so it moves with it
         
         // Add some decorative features based on enemy type
         if (baseType === 'elephant') {
@@ -809,12 +1038,58 @@ export class Renderer {
             emissiveIntensity: 0.5
         });
 
-        // Create the base (cylindrical base)
-        const baseGeometry = new THREE.CylinderGeometry(0.4, 0.5, 0.4, 8);
+        // Create the tower base - taller for better visibility
+        const baseGeometry = new THREE.CylinderGeometry(0.4, 0.5, 0.6, 8);
         const base = new THREE.Mesh(baseGeometry, baseMaterial);
-        base.position.y = 0.2; // Position at half height
+        base.position.y = 0.3; // Position above ground, higher now
+        
+        // Add a wider foundation base connecting to the ground - thicker and wider
+        const foundationGeometry = new THREE.CylinderGeometry(0.55, 0.6, 0.1, 8);
+        const foundationMaterial = new THREE.MeshStandardMaterial({
+            color: baseMaterial.color.clone(),
+            roughness: baseMaterial.roughness,
+            metalness: baseMaterial.metalness,
+            emissive: baseMaterial.emissive,
+            emissiveIntensity: baseMaterial.emissiveIntensity,
+            polygonOffset: true,      // Enable polygon offset
+            polygonOffsetFactor: 1,   // Move geometry away from camera
+            polygonOffsetUnits: 1     // Further reduce z-fighting
+        });
+        const foundation = new THREE.Mesh(foundationGeometry, foundationMaterial);
+        foundation.position.y = 0.05; // Slightly above ground level to prevent z-fighting
+        
+        // Enhanced shadow settings for tower base
         base.castShadow = true;
+        base.receiveShadow = true;
+        
+        // Create a shadow effect using a blob decal instead of a plane
+        // This prevents z-fighting with the ground
+        const shadowSize = 1.0; // Size of shadow
+        
+        // Create points for a circular shadow (more natural looking than a square)
+        const shadowShape = new THREE.Shape();
+        shadowShape.moveTo(0, 0);
+        shadowShape.absarc(0, 0, shadowSize/2, 0, Math.PI * 2, false);
+        
+        const shadowGeometry = new THREE.ShapeGeometry(shadowShape);
+        const shadowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.25, // More subtle shadow
+            depthWrite: false, // Prevent z-fighting
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
+        
+        const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
+        shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
+        shadowPlane.position.y = 0.02; // Just above ground level
+        shadowPlane.renderOrder = -1; // Render before other objects
+        towerGroup.add(shadowPlane); // Add shadow
+        
         towerGroup.add(base);
+        towerGroup.add(foundation); // Add foundation to connect tower to ground
 
         // Add top part - different for each tower type
         let top;
@@ -835,7 +1110,7 @@ export class Renderer {
                         new THREE.ConeGeometry(0.35, 0.7, 8),
                         topMaterial
                     );
-                    fireCone.position.y = 0.7;
+                    fireCone.position.y = 0.9; // Higher to match taller base
                     fireGroup.add(fireCone);
                     
                     // For advanced fire tower, add extra details
@@ -865,7 +1140,7 @@ export class Renderer {
                         new THREE.SphereGeometry(0.35, 12, 12),
                         topMaterial
                     );
-                    waterSphere.position.y = 0.7;
+                    waterSphere.position.y = 0.9;
                     waterGroup.add(waterSphere);
                     
                     // Add water jets/fountains for advanced tower
@@ -902,7 +1177,7 @@ export class Renderer {
                         new THREE.DodecahedronGeometry(0.35, 0),
                         topMaterial
                     );
-                    rockBase.position.y = 0.7;
+                    rockBase.position.y = 0.9;
                     earthGroup.add(rockBase);
                     
                     // For advanced, add extra rock formations
@@ -998,7 +1273,7 @@ export class Renderer {
                             emissiveIntensity: 0.7
                         })
                     );
-                    shadowCore.position.y = 0.7;
+                    shadowCore.position.y = 0.9;
                     shadowGroup.add(shadowCore);
                     
                     // Add floating dark matter particles
@@ -1013,7 +1288,7 @@ export class Renderer {
                                 side: THREE.BackSide
                             })
                         );
-                        voidSphere.position.y = 0.7;
+                        voidSphere.position.y = 0.9;
                         shadowGroup.add(voidSphere);
                     }
                     
@@ -1026,7 +1301,7 @@ export class Renderer {
                         new THREE.ConeGeometry(0.3, 0.6, 8),
                         topMaterial
                     );
-                    top.position.y = 0.7;
+                    top.position.y = 0.9;
             }
         } else {
             // Standard tower types
@@ -1035,7 +1310,7 @@ export class Renderer {
                     // Cone-shaped top for arrow tower
                     const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
                     top = new THREE.Mesh(topGeometry, topMaterial);
-                    top.position.y = 0.7; // Position above the base
+                    top.position.y = 0.9; // Position above the base
                     break;
                     
                 case 'doubleArrow':
@@ -1068,7 +1343,7 @@ export class Renderer {
                         new THREE.SphereGeometry(0.35, 12, 12),
                         topMaterial
                     );
-                    sphere.position.y = 0.7;
+                    sphere.position.y = 0.9;
                     
                     const barrel = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
@@ -1091,26 +1366,42 @@ export class Renderer {
                         new THREE.BoxGeometry(0.4, 0.4, 0.4),
                         topMaterial
                     );
-                    top.position.y = 0.7;
+                    top.position.y = 0.9;
             }
         }
         
+        // Enhanced shadow settings for tower tops
         top.castShadow = true;
+        top.receiveShadow = true;
+        
+        // Make sure all parts of nested groups can cast shadows
+        if (top.isGroup) {
+            top.traverse(child => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+        }
+        
         towerGroup.add(top);
         
         // Add a glow effect only to special towers
         if (isSpecialTower) {
             // Create glow mesh
-            const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+            const glowGeometry = new THREE.SphereGeometry(0.9, 16, 16);
             const glowMaterial = new THREE.MeshBasicMaterial({
                 color: elementStyle.particleColor,
                 transparent: true,
                 opacity: 0.3,
-                side: THREE.BackSide
+                side: THREE.BackSide,
+                depthWrite: false, // Don't write to depth buffer for better shadow rendering
+                blending: THREE.AdditiveBlending // Enhanced glow effect
             });
             
             const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            glow.position.y = 0.7; // Position at the top part
+            glow.position.y = 1.0; // Position at the top part - higher now for taller towers
+            glow.renderOrder = 5; // Ensure proper rendering order
             towerGroup.add(glow);
         }
         
@@ -1298,8 +1589,34 @@ export class Renderer {
                 });
         }
 
+        // Force shadow properties on projectile materials
+        if (material) {
+            material.shadowSide = THREE.FrontSide;
+        }
+        
         const mesh = new THREE.Mesh(geometry, material);
+        // Enhanced shadow settings for projectiles
         mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Optional: Add a small shadow projector that follows below the projectile
+        if (projectile.type === 'cannon') { // Only for larger projectiles
+            const shadowSize = 0.4;
+            const shadowPlane = new THREE.Mesh(
+                new THREE.PlaneGeometry(shadowSize, shadowSize),
+                new THREE.MeshBasicMaterial({
+                    color: 0x000000,
+                    transparent: true,
+                    opacity: 0.3,
+                    depthWrite: false
+                })
+            );
+            shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
+            shadowPlane.position.y = -100; // Start far away, will be updated in animation
+            // Store for updating in animation
+            mesh.userData.shadowProjector = shadowPlane;
+            this.scene.add(shadowPlane);
+        }
         
         // Add glowing halo to all projectiles
         const glowSize = (projectile.type === 'cannon') ? 0.35 : 
@@ -1357,65 +1674,76 @@ export class Renderer {
     }
 
     createTowerPreview(towerType) {
+        console.log("Creating tower preview for type:", towerType);
+        
         // Remove existing preview if any
         if (this.previewMesh) {
             this.scene.remove(this.previewMesh);
+            this.previewMesh = null;
         }
 
         // Create a group for the preview tower
         const previewGroup = new THREE.Group();
         let baseMaterial, topMaterial;
 
-        // Set transparent materials for preview
+        // Set transparent materials for preview with wireframe style to make it
+        // more visible and avoid any ground shading issues
         switch (towerType) {
             case 'arrow':
                 baseMaterial = new THREE.MeshBasicMaterial({
                     color: 0x4CAF50,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true, // Use wireframe to avoid shading issues
+                    wireframeLinewidth: 2
                 });
                 topMaterial = new THREE.MeshBasicMaterial({
                     color: 0x388E3C,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true, // Use wireframe to avoid shading issues
+                    wireframeLinewidth: 2
                 });
                 break;
             case 'doubleArrow':
                 baseMaterial = new THREE.MeshBasicMaterial({
                     color: 0x66BB6A,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true,
+                    wireframeLinewidth: 2
                 });
                 topMaterial = new THREE.MeshBasicMaterial({
                     color: 0x4CAF50,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true,
+                    wireframeLinewidth: 2
                 });
                 break;
             case 'cannon':
                 baseMaterial = new THREE.MeshBasicMaterial({
                     color: 0x388E3C,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true,
+                    wireframeLinewidth: 2
                 });
                 topMaterial = new THREE.MeshBasicMaterial({
                     color: 0x2E7D32,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true,
+                    wireframeLinewidth: 2
                 });
                 break;
             default:
                 baseMaterial = new THREE.MeshBasicMaterial({
                     color: 0x4CAF50,
                     transparent: true,
-                    opacity: 0.6,
-                    wireframe: false
+                    opacity: 0.7,
+                    wireframe: true,
+                    wireframeLinewidth: 2
                 });
                 topMaterial = baseMaterial;
         }
@@ -1432,7 +1760,7 @@ export class Renderer {
             case 'arrow':
                 const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
                 top = new THREE.Mesh(topGeometry, topMaterial);
-                top.position.y = 0.7;
+                top.position.y = 0.9;
                 break;
                 
             case 'doubleArrow':
@@ -1465,7 +1793,7 @@ export class Renderer {
                     new THREE.SphereGeometry(0.35, 12, 12),
                     topMaterial
                 );
-                sphere.position.y = 0.7;
+                sphere.position.y = 0.9;
                 
                 const barrel = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
@@ -1487,7 +1815,7 @@ export class Renderer {
                     new THREE.BoxGeometry(0.4, 0.4, 0.4),
                     topMaterial
                 );
-                top.position.y = 0.7;
+                top.position.y = 0.9;
         }
 
         previewGroup.add(top);
@@ -1569,9 +1897,12 @@ export class Renderer {
     }
 
     removeTowerPreview() {
+        console.log("Removing tower preview");
         if (this.previewMesh) {
             this.scene.remove(this.previewMesh);
             this.previewMesh = null;
+        } else {
+            console.log("No preview mesh to remove");
         }
 
         // Hide grid highlight
@@ -1586,8 +1917,11 @@ export class Renderer {
         // Update color
         this.gridHighlight.material.color.setHex(isValid ? 0x4CAF50 : 0xFF5252);
         
-        // Update opacity for better visibility
-        this.gridHighlight.material.opacity = isValid ? 0.5 : 0.7;
+        // Make it very visible and bright
+        this.gridHighlight.material.opacity = isValid ? 0.9 : 1.0;
+        
+        // Size is fixed by the BoxGeometry we're using
+        this.gridHighlight.scale.set(1, 1, 1);
 
         // Hide grid highlight if position is at the center of the map (0,0) and we're on mobile,
         // Similar to what we do with the preview mesh to prevent phantom highlights
@@ -1606,37 +1940,192 @@ export class Renderer {
         this.gridHighlight.visible = false;
     }
     
+    updateMapColors(mapGroup, pathColor = null, groundColor = null) {
+        if (!mapGroup) return;
+        
+        // Update path color if provided
+        if (pathColor) {
+            const pathColorValue = parseInt(pathColor.replace('#', '0x'), 16);
+            
+            // Update all children that represent the path
+            mapGroup.traverse((child) => {
+                // Find all meshes that are path tiles
+                if (child.isMesh && 
+                    child.material && 
+                    !child.material.name && 
+                    child.position.y === 0.05 // This is a path tile (sits above ground)
+                ) {
+                    // Skip special tiles (entry/exit points which have special colors)
+                    if (child.material.color.getHex() !== 0x4169E1 && // Entry blue
+                        child.material.color.getHex() !== 0x9932CC && // Exit purple
+                        child.material.color.getHex() !== 0xFF6347) { // Restricted red
+                        
+                        // Set the material color
+                        child.material.color.setHex(pathColorValue);
+                        
+                        // Store the material for reuse
+                        if (this.materials.path) {
+                            this.materials.path.color.setHex(pathColorValue);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update ground color if provided
+        if (groundColor) {
+            const groundColorValue = parseInt(groundColor.replace('#', '0x'), 16);
+            
+            // Find the ground plane
+            mapGroup.traverse((child) => {
+                if (child.isMesh && 
+                    child.material && 
+                    child.rotation.x === -Math.PI / 2 && // Rotated to be horizontal
+                    child.position.y === 0) { // This is the ground
+                    
+                    // Set the material color
+                    child.material.color.setHex(groundColorValue);
+                    
+                    // Also adjust emissive color to match
+                    if (child.material.emissive) {
+                        // Set emissive to a darker version of the ground color
+                        const color = new THREE.Color(groundColorValue);
+                        color.multiplyScalar(0.7); // Darken
+                        child.material.emissive.copy(color);
+                    }
+                }
+            });
+        }
+    }
+    
+    updateGridStyle(styleName, brightness = 0.5, pathColor = null, groundColor = null) {
+        // Find the map group
+        if (!this.scene) return;
+        
+        // Find the first map group in the scene
+        let mapGroup = null;
+        for (const child of this.scene.children) {
+            if (child.userData && child.userData.gridLines) {
+                mapGroup = child;
+                break;
+            }
+        }
+        
+        if (!mapGroup || !mapGroup.userData.gridLines) return;
+        
+        const gridLines = mapGroup.userData.gridLines;
+        const styleProps = mapGroup.userData.gridStyleProperties;
+        styleProps.currentStyle = styleName;
+        styleProps.brightness = brightness;
+        
+        // Update path and ground colors if provided
+        this.updateMapColors(mapGroup, pathColor, groundColor);
+        
+        // Normalize brightness (0-1)
+        const brightnessFactor = brightness;
+        
+        // Update all lines based on style
+        switch (styleName) {
+            case 'borders':
+                // Only show border lines
+                gridLines.children.forEach((line, index) => {
+                    // Only make visible the outermost grid lines
+                    const isHorizontalBorder = (index === 0 || index === Math.floor(gridLines.children.length / 2) - 1);
+                    const isVerticalBorder = (index === Math.floor(gridLines.children.length / 2) || index === gridLines.children.length - 1);
+                    
+                    if (isHorizontalBorder || isVerticalBorder) {
+                        line.material.opacity = 0.8 * brightnessFactor;
+                        line.material.color.setHex(0x00ff44); // Bright green
+                        line.material.linewidth = 2; // Thicker lines (note: limited browser support)
+                        line.visible = true;
+                    } else {
+                        line.visible = false;
+                    }
+                });
+                break;
+                
+            case 'opacity':
+                // High opacity green grid
+                gridLines.children.forEach(line => {
+                    line.material.opacity = 0.4 * brightnessFactor; // Higher opacity
+                    line.material.color.setHex(0x00ff00); // Standard green
+                    line.visible = true;
+                });
+                
+                // Update ground glow too
+                if (mapGroup.userData.glowLayer) {
+                    mapGroup.userData.glowLayer.material.opacity = 0.2 * brightnessFactor;
+                }
+                break;
+                
+            case 'neon':
+                // Neon green effect
+                gridLines.children.forEach(line => {
+                    line.material.opacity = 0.7 * brightnessFactor;
+                    line.material.color.setHex(0x39ff14); // Neon green
+                    line.visible = true;
+                });
+                
+                // Update ground color for neon effect
+                if (mapGroup.userData.glowLayer) {
+                    mapGroup.userData.glowLayer.material.color.setHex(0x39ff14);
+                    mapGroup.userData.glowLayer.material.opacity = 0.15 * brightnessFactor;
+                }
+                break;
+                
+            default: // 'default'
+                // Reset to default style
+                const defaultColor = styleProps.defaultColor;
+                const defaultOpacity = styleProps.defaultOpacity;
+                
+                gridLines.children.forEach(line => {
+                    line.material.opacity = defaultOpacity * brightnessFactor;
+                    line.material.color.setHex(defaultColor);
+                    line.visible = true;
+                });
+                
+                // Reset ground glow
+                if (mapGroup.userData.glowLayer) {
+                    mapGroup.userData.glowLayer.material.color.setHex(0x4AFF8D);
+                    mapGroup.userData.glowLayer.material.opacity = 0.12 * brightnessFactor;
+                }
+                break;
+        }
+    }
+    
     cleanupScene() {
-        // Remove all non-essential objects from the scene
-        const objectsToKeep = [];
+        console.log("Cleaning up scene...");
+        console.log("Initial scene children count:", this.scene.children.length);
         
-        // Keep track of which objects to keep (like ground, lights, grid helpers)
-        this.scene.traverse(object => {
-            // Keep lights
-            if (object.isLight) {
-                objectsToKeep.push(object);
-            }
-            
-            // Keep the ground and path
-            if (object.userData && object.userData.isGround) {
-                objectsToKeep.push(object);
-            }
-            
-            // Keep the grid helper
-            if (object === this.gridHelper || object === this.gridHighlight) {
-                objectsToKeep.push(object);
-            }
-        });
+        // Instead of keeping objects, let's just remove everything but create a new clean scene
+        // This is more reliable for preventing duplicate objects
         
-        // Remove everything else
+        // Clear the entire scene
         while (this.scene.children.length > 0) {
-            this.scene.remove(this.scene.children[0]);
+            const obj = this.scene.children[0];
+            this.scene.remove(obj);
         }
         
-        // Add back the objects we want to keep
-        for (const object of objectsToKeep) {
-            this.scene.add(object);
-        }
+        // Reset the scene to initial state
+        this.setupLights();
+        
+        // Add grid helper back
+        this.gridHelper = new THREE.GridHelper(25, 25);
+        this.gridHelper.position.y = 0.01;
+        this.gridHelper.visible = false;
+        this.scene.add(this.gridHelper);
+        
+        // Add grid highlight back
+        this.gridHighlight = new THREE.Mesh(
+            new THREE.PlaneGeometry(1, 1),
+            this.materials.gridHighlight
+        );
+        this.gridHighlight.rotation.x = -Math.PI / 2;
+        this.gridHighlight.position.y = 0.02;
+        this.gridHighlight.visible = false;
+        this.scene.add(this.gridHighlight);
+        
+        console.log("Scene cleanup complete. Scene children count:", this.scene.children.length);
     }
 
     createSpecialEffect(type, position) {

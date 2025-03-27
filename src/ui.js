@@ -29,11 +29,10 @@ export class UI {
         // Mouse move handler for tower preview
         this.setupMouseMoveHandler();
         
-        // Setup keyboard shortcuts
-        this.setupKeyboardShortcuts();
-        
         // Setup touch controls for mobile
         this.setupTouchControls();
+        
+        // Note: Keyboard shortcuts are now handled in main.js only
     }
 
     setupRaycaster() {
@@ -142,6 +141,7 @@ export class UI {
 
     setupMouseMoveHandler() {
         // This is handled in the setupRaycaster method
+        console.log("Mouse move handler setup is done in setupRaycaster method");
     }
     
     setupTouchControls() {
@@ -284,34 +284,17 @@ export class UI {
         }, { passive: false });
     }
     
-    setupKeyboardShortcuts() {
-        // Add keyboard shortcuts for tower selection
-        document.addEventListener('keydown', (event) => {
-            // Only process shortcuts when not in input fields
-            if (event.target.tagName === 'INPUT') return;
-            
-            switch(event.key) {
-                case '1':
-                    this.selectTower('arrow');
-                    break;
-                case '2':
-                    this.selectTower('doubleArrow');
-                    break;
-                case '3':
-                    this.selectTower('cannon');
-                    break;
-                case 'Escape':
-                    this.cancelTowerPlacement();
-                    break;
-            }
-        });
-    }
+    // REMOVED: setupKeyboardShortcuts method - now handled in main.js to avoid duplicate events
+    // Keyboard shortcuts for tower selection are now fully handled in main.js
 
     selectTower(towerType) {
-        // On mobile, tapping the same tower toggles selection
-        // On desktop we always select the tower (for keyboard shortcuts 1,2,3 to work properly)
-        if (window.innerWidth <= 768 && towerType === this.selectedTower) {
-            // Deselect tower on mobile only
+        console.log("Tower selection called with:", towerType, "Currently selected:", this.selectedTower);
+        
+        // Check if we're selecting the same tower that's already selected
+        if (towerType === this.selectedTower) {
+            console.log("Toggling off currently selected tower");
+            
+            // This is a toggle - deselect the current tower
             this.towerOptions.forEach(element => {
                 element.classList.remove('selected');
             });
@@ -320,13 +303,18 @@ export class UI {
             this.selectedTower = null;
             
             // Remove tower preview
-            if (this.towerPreviewMesh) {
-                this.game.renderer.removeTowerPreview();
-                this.towerPreviewMesh = null;
-            }
+            this.game.renderer.removeTowerPreview();
+            this.towerPreviewMesh = null;
             
             return;
         }
+        
+        // We're selecting a different tower or selecting when none was selected
+        console.log("Selecting a different tower");
+        
+        // Always remove any existing preview before creating a new one
+        this.game.renderer.removeTowerPreview();
+        this.towerPreviewMesh = null;
         
         // Deselect previous tower option if any
         this.towerOptions.forEach(element => {
@@ -344,12 +332,13 @@ export class UI {
         this.selectedTower = towerType;
 
         // Create tower preview
-        if (this.selectedTower) {
-            this.towerPreviewMesh = this.game.renderer.createTowerPreview(towerType);
-        }
+        this.towerPreviewMesh = this.game.renderer.createTowerPreview(towerType);
+        console.log("Created tower preview for:", towerType);
     }
 
     cancelTowerPlacement() {
+        console.log("Canceling tower placement");
+        
         // For consistency between mobile and desktop, we deselect the tower completely
         
         // Deselect tower in UI
@@ -358,10 +347,8 @@ export class UI {
         });
         
         // Remove tower preview
-        if (this.towerPreviewMesh) {
-            this.game.renderer.removeTowerPreview();
-            this.towerPreviewMesh = null;
-        }
+        this.game.renderer.removeTowerPreview();
+        this.towerPreviewMesh = null;
         
         // Clear selected tower
         this.selectedTower = null;
@@ -374,7 +361,15 @@ export class UI {
     }
 
     async updateTowerPreview(normalizedX, normalizedY) {
-        if (!this.selectedTower || !this.towerPreviewMesh) return;
+        if (!this.selectedTower) {
+            console.log("No tower selected, cannot update preview");
+            return;
+        }
+        
+        if (!this.towerPreviewMesh) {
+            console.log("No preview mesh exists, creating one");
+            this.towerPreviewMesh = this.game.renderer.createTowerPreview(this.selectedTower);
+        }
 
         // Cast ray to determine where to place the tower
         const camera = this.game.renderer.camera;
@@ -415,6 +410,12 @@ export class UI {
 
     async handleCanvasClick(normalizedX, normalizedY) {
         if (!this.selectedTower) return;
+        
+        // Check if camera is rotating - abort tower placement if it is
+        if (this.game.renderer.isRotating) {
+            console.log("Camera is rotating, aborting tower placement");
+            return;
+        }
 
         // Calculate mouse position in normalized device coordinates (-1 to +1)
         const mouseX = (normalizedX * 2) - 1;

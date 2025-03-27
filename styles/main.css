@@ -155,7 +155,7 @@ body {
     left: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
     width: auto;
-    max-width: 200px;
+    max-width: 250px;
     z-index: 10;
 }
 
@@ -196,6 +196,16 @@ body {
     font-size: 0.9rem;
 }
 
+/* Style for the gold cost text */
+.tower-option span {
+    margin-left: 8px;
+    font-family: 'Consolas', monospace;
+    background-color: rgba(255, 215, 0, 0.2);
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: gold;
+}
+
 @media (max-width: 768px) {
     .tower-option {
         padding: 4px 5px;
@@ -211,6 +221,11 @@ body {
     .tower-option span {
         margin-left: 2px;
         font-size: 0.65rem;
+        /* Keep the gold styling but with smaller padding for mobile */
+        padding: 1px 3px;
+        background-color: rgba(255, 215, 0, 0.2);
+        border-radius: 3px;
+        color: gold;
     }
     
     .tower-option::before {
@@ -791,6 +806,73 @@ button:active {
     padding: 10px;
     background-color: rgba(156, 39, 176, 0.1);
     border-radius: 8px;
+}
+
+.grid-style-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.grid-style-controls label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.grid-style-controls input[type="radio"] {
+    margin-right: 8px;
+}
+
+.grid-options {
+    margin-top: 10px;
+}
+
+.grid-options label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.grid-options input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: linear-gradient(to right, #4CAF50, #8BC34A);
+    border-radius: 3px;
+    outline: none;
+}
+
+.grid-options input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    border: 2px solid #4CAF50;
+}
+
+.grid-options input[type="color"] {
+    width: 100%;
+    height: 30px;
+    -webkit-appearance: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: transparent;
+}
+
+.grid-options input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.grid-options input[type="color"]::-webkit-color-swatch {
+    border: 2px solid #4CAF50;
+    border-radius: 4px;
 }
 
 .section-title {
