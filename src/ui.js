@@ -87,7 +87,7 @@ export class UI {
                 const normalizedY = y / canvas.clientHeight;
 
                 // Handle the click for tower placement
-                this.handleCanvasClick(normalizedX, normalizedY);
+                // this.handleCanvasClick(normalizedX, normalizedY); // REMOVED - handling in click event now
             } else if (wasDragging) {
                 // If we were dragging (camera rotation), remove any tower preview to prevent accidental placement
                 if (this.towerPreviewMesh) {
@@ -383,12 +383,24 @@ export class UI {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera({ x: mouseX, y: mouseY }, camera);
 
-        // Create a horizontal plane for intersection
-        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        const target = new THREE.Vector3();
-
-        // Find intersection point
-        raycaster.ray.intersectPlane(groundPlane, target);
+        // First try intersecting with scene objects
+        const intersects = raycaster.intersectObjects(this.game.renderer.scene.children, true);
+        
+        // Filter to only consider the ground - ignore other objects
+        const groundIntersects = intersects.filter(intersect => 
+            intersect.object.userData && intersect.object.userData.isGround
+        );
+        
+        let target = new THREE.Vector3();
+        
+        if (groundIntersects.length > 0) {
+            // Use the first ground intersection
+            target = groundIntersects[0].point;
+        } else {
+            // Fallback to plane intersection if no ground was hit
+            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            raycaster.ray.intersectPlane(groundPlane, target);
+        }
 
         // Convert to grid coordinates
         const gridCoords = map.worldToGrid(target.x, target.z);
@@ -426,12 +438,24 @@ export class UI {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera({ x: mouseX, y: mouseY }, camera);
 
-        // Create a horizontal plane for intersection
-        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        const target = new THREE.Vector3();
-
-        // Find intersection point
-        raycaster.ray.intersectPlane(groundPlane, target);
+        // First try intersecting with scene objects
+        const intersects = raycaster.intersectObjects(this.game.renderer.scene.children, true);
+        
+        // Filter to only consider the ground - ignore other objects
+        const groundIntersects = intersects.filter(intersect => 
+            intersect.object.userData && intersect.object.userData.isGround
+        );
+        
+        let target = new THREE.Vector3();
+        
+        if (groundIntersects.length > 0) {
+            // Use the first ground intersection
+            target = groundIntersects[0].point;
+        } else {
+            // Fallback to plane intersection if no ground was hit
+            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            raycaster.ray.intersectPlane(groundPlane, target);
+        }
 
         // Convert to grid coordinates
         const map = this.game.map;
@@ -449,8 +473,9 @@ export class UI {
         if (this.isValidPlacement) {
             // Check if we're in TCG tower placement mode
             if (this.isTowerPlacementMode && this.towerPlacementCallback) {
-                // Use TCG placement callback
-                this.towerPlacementCallback(true, { x: gridX, y: gridY });
+                // Use TCG placement callback (which may be async now)
+                Promise.resolve(this.towerPlacementCallback(true, { x: gridX, y: gridY }))
+                  .catch(err => console.error("Error in tower placement callback:", err));
                 console.log("TCG tower placement callback called");
             } else {
                 // Normal tower placement
@@ -479,9 +504,10 @@ export class UI {
         } else {
             console.log("Invalid placement location");
             
-            // If we're in TCG mode, call the callback with failure
+            // If we're in TCG mode, call the callback with failure (handling async)
             if (this.isTowerPlacementMode && this.towerPlacementCallback) {
-                this.towerPlacementCallback(false);
+                Promise.resolve(this.towerPlacementCallback(false))
+                  .catch(err => console.error("Error in tower placement callback:", err));
             }
         }
     }

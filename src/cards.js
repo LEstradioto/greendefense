@@ -555,6 +555,11 @@ export class Deck {
         deck.addCard(catalog.getCardById('fire_wave'));
         deck.addCard(catalog.getCardById('water_freeze'));
         
+        // Add special spells that weren't working
+        deck.addCard(catalog.getCardById('earth_shield'));
+        deck.addCard(catalog.getCardById('air_haste'));
+        deck.addCard(catalog.getCardById('shadow_drain'));
+        
         // Add some basic enemies for multiplayer
         deck.addCard(catalog.getCardById('fire_imp'));
         deck.addCard(catalog.getCardById('water_elemental'));

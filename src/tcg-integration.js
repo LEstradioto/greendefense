@@ -641,7 +641,7 @@ export class TCGIntegration {
         this.selectedCard = null;
     }
     
-    onTowerPlaced(success, gridPosition) {
+    async onTowerPlaced(success, gridPosition) {
         if (success && this.selectedCard) {
             // Convert tower card to tower entity
             const worldPosition = this.game.map.gridToWorld(gridPosition.x, gridPosition.y);
@@ -671,41 +671,83 @@ export class TCGIntegration {
                 towerType = this.selectedCard.rarity === CardRarity.COMMON ? 'arrow' : 'doubleArrow';
             }
             
-            // Place tower through the game's API
-            const placementSuccess = this.game.placeTower(towerType, gridPosition.x, gridPosition.y);
-            
-            if (placementSuccess) {
-                // Get the tower that was just placed (it should be the last one in the array)
-                const tower = this.game.towers[this.game.towers.length - 1];
+            // For TCG cards, we need to make sure the player has enough mana to cast
+            if (this.mana >= this.selectedCard.cost) {
+                // Instead of calling game.placeTower which handles gold costs, we'll place the tower directly
+                // This completely bypasses the gold cost mechanism in game.placeTower
                 
-                // Set tower properties based on card
-                if (tower) {
-                    // Make sure element is properly set (might be an array for dual-element cards)
-                    if (Array.isArray(this.selectedCard.element)) {
-                        tower.element = this.selectedCard.element[0]; // Use primary element
-                    } else {
-                        tower.element = this.selectedCard.element;
-                    }
-                    
-                    // Apply card stats
-                    tower.damage = stats.damage;
-                    tower.range = stats.range;
-                    tower.fireRate = stats.fireRate;
-                    tower.specialAbility = stats.specialAbility;
-                    
-                    // Apply any element-specific properties
-                    tower.setAdditionalStats();
+                // Check if placement is valid
+                const canPlace = await this.game.map.canPlaceTower(gridPosition.x, gridPosition.y);
+                if (!canPlace) {
+                    console.log("Tower placement failed: canPlaceTower returned false");
+                    return false;
                 }
                 
-                // Deduct mana
-                this.mana -= this.selectedCard.cost;
+                // Get world position
+                const position = this.game.map.gridToWorld(gridPosition.x, gridPosition.y);
                 
-                // Remove card from hand
-                this.removeCardFromHand(this.selectedCard);
+                // Create tower with appropriate element
+                let element = ElementTypes.NEUTRAL;
+                if (towerType.startsWith('fire_')) {
+                    element = ElementTypes.FIRE;
+                } else if (towerType.startsWith('water_')) {
+                    element = ElementTypes.WATER;
+                } else if (towerType.startsWith('earth_')) {
+                    element = ElementTypes.EARTH;
+                } else if (towerType.startsWith('air_')) {
+                    element = ElementTypes.AIR;
+                } else if (towerType.startsWith('shadow_')) {
+                    element = ElementTypes.SHADOW;
+                }
                 
-                // Update UI
-                this.updateCardUI();
-                this.updateManaDisplay();
+                // Debug gold before TCG tower placement
+                const oldGold = this.game.player.gold;
+                console.log(`[GOLD DEBUG] TCG tower placement before: Gold=${oldGold}, TowerType=${towerType}, ManaCost=${this.selectedCard.cost}`);
+                
+                // Create and add tower directly
+                const tower = new Tower(this.game, towerType, position, { gridX: gridPosition.x, gridY: gridPosition.y }, element);
+                this.game.map.placeTower(gridPosition.x, gridPosition.y);
+                this.game.towers.push(tower);
+                
+                // Debug gold after TCG tower placement
+                console.log(`[GOLD DEBUG] TCG tower placement after: Gold=${this.game.player.gold}, Difference=${this.game.player.gold - oldGold}`);
+                
+                // Mark placement as successful
+                const placementSuccess = true;
+                
+                if (placementSuccess) {
+                    // Get the tower that was just placed (it should be the last one in the array)
+                    const tower = this.game.towers[this.game.towers.length - 1];
+                    
+                    // Set tower properties based on card
+                    if (tower) {
+                        // Make sure element is properly set (might be an array for dual-element cards)
+                        if (Array.isArray(this.selectedCard.element)) {
+                            tower.element = this.selectedCard.element[0]; // Use primary element
+                        } else {
+                            tower.element = this.selectedCard.element;
+                        }
+                        
+                        // Apply card stats
+                        tower.damage = stats.damage;
+                        tower.range = stats.range;
+                        tower.fireRate = stats.fireRate;
+                        tower.specialAbility = stats.specialAbility;
+                        
+                        // Apply any element-specific properties
+                        tower.setAdditionalStats();
+                    }
+                    
+                    // Deduct mana (gold is already deducted in game.placeTower)
+                    this.mana -= this.selectedCard.cost;
+                    
+                    // Remove card from hand
+                    this.removeCardFromHand(this.selectedCard);
+                    
+                    // Update UI
+                    this.updateCardUI();
+                    this.updateManaDisplay();
+                }
             }
             
             // Reset selected card
@@ -737,7 +779,20 @@ export class TCGIntegration {
                 success = this.castFreezeSpell(spellStats);
                 break;
                 
-            // Add more spell types as needed
+            case 'shield':
+                // Stone Shield: Apply protective shields to towers
+                success = this.castShieldSpell(spellStats);
+                break;
+                
+            case 'haste':
+                // Wind Rush: Increase attack speed of towers
+                success = this.castHasteSpell(spellStats);
+                break;
+                
+            case 'drain':
+                // Void Drain: Weakens enemies and restores mana
+                success = this.castDrainSpell(spellStats);
+                break;
         }
         
         if (success) {
@@ -829,6 +884,110 @@ export class TCGIntegration {
         this.game.powerCards.activeEffects.push(effect);
         
         return hitCount > 0;
+    }
+    
+    castShieldSpell(spellStats) {
+        // Apply shield effect to towers
+        const duration = spellStats.duration;
+        const damageReduction = 0.5; // 50% damage reduction
+        
+        // Apply shield effect to all towers
+        let affectedCount = 0;
+        
+        for (const tower of this.game.towers) {
+            tower.applyEffect('shield', damageReduction, duration);
+            
+            // Visual effect on tower
+            if (tower.mesh) {
+                const effectPosition = {
+                    x: tower.position.x,
+                    y: tower.position.y + 0.5,
+                    z: tower.position.z
+                };
+                const effect = this.game.powerCards.createShieldEffect(effectPosition);
+                this.game.powerCards.activeEffects.push(effect);
+            }
+            affectedCount++;
+        }
+        
+        // Return true if any towers were affected
+        return affectedCount > 0;
+    }
+    
+    castHasteSpell(spellStats) {
+        // Apply haste effect to towers (increased attack speed)
+        const duration = spellStats.duration;
+        const speedMultiplier = 1.5; // 50% faster attacks
+        
+        // Apply effect to all towers
+        let affectedCount = 0;
+        
+        for (const tower of this.game.towers) {
+            tower.applyEffect('haste', speedMultiplier, duration);
+            
+            // Visual effect
+            if (tower.mesh) {
+                const effectPosition = {
+                    x: tower.position.x,
+                    y: tower.position.y + 0.5,
+                    z: tower.position.z
+                };
+                const effect = this.game.powerCards.createWindEffect(effectPosition);
+                this.game.powerCards.activeEffects.push(effect);
+            }
+            affectedCount++;
+        }
+        
+        // Return true if any towers were affected
+        return affectedCount > 0;
+    }
+    
+    castDrainSpell(spellStats) {
+        // Apply drain effect to enemies (weakens them) and restore mana
+        const duration = spellStats.duration;
+        const weakenAmount = 0.5; // 50% increased damage taken
+        const manaRestored = Math.min(3, this.absoluteMaxMana - this.mana); // Restore up to 3 mana
+        
+        // Apply weaken effect to all enemies
+        let affectedCount = 0;
+        for (const enemy of this.game.enemies) {
+            enemy.applyStatusEffect('weaken', {
+                duration: duration,
+                damageModifier: 1.0 + weakenAmount // Take 50% more damage
+            });
+            
+            // Create visual effect on each enemy
+            const effectPosition = {
+                x: enemy.position.x,
+                y: enemy.position.y + 0.5,
+                z: enemy.position.z
+            };
+            const effect = this.game.powerCards.createDrainEffect(effectPosition);
+            this.game.powerCards.activeEffects.push(effect);
+            
+            affectedCount++;
+        }
+        
+        // Restore mana if enemies were affected
+        if (affectedCount > 0) {
+            this.mana = Math.min(this.absoluteMaxMana, this.mana + manaRestored);
+            this.updateManaDisplay();
+            
+            // Show mana gain UI effect
+            const manaGainMessage = document.createElement('div');
+            manaGainMessage.className = 'mana-gain-message';
+            manaGainMessage.textContent = `+${manaRestored} Mana`;
+            document.getElementById('game-container').appendChild(manaGainMessage);
+            
+            // Animate and remove
+            setTimeout(() => {
+                manaGainMessage.style.opacity = '0';
+                setTimeout(() => manaGainMessage.remove(), 1000);
+            }, 1500);
+        }
+        
+        // Return true if any enemies were affected
+        return affectedCount > 0;
     }
     
     removeCardFromHand(card) {

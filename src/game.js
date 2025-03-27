@@ -33,16 +33,42 @@ export class Game {
         this.debugMode = false;
         this.cardDebugMode = false; // New debug mode for testing cards
         this.isMultiplayer = false; // Will be used for TCG enemy cards
+        
+        // Game balance settings
+        this.difficultySettings = {
+            enemyHealthMultiplier: 1.0,    // Base multiplier for enemy health
+            enemySpeedMultiplier: 1.0,     // Base multiplier for enemy speed
+            goldMultiplier: 1.0,           // Base multiplier for gold rewards
+            towerDamageMultiplier: 1.0,    // Base multiplier for tower damage
+            waveSpeedMultiplier: 1.0,       // Base multiplier for spawn rate
+            spawnIntervalMultiplier: 1.0,  // Controls time between enemy spawns
+            randomFactorMultiplier: 0.2,   // Random variation in enemy stats (0-1)
+            bossHealthMultiplier: 3.0,     // Multiplier for boss health
+            bossSpeedMultiplier: 0.7       // Multiplier for boss speed (slower but tougher)
+        };
+        
+        // Per-wave difficulty settings
+        this.waveSettings = [
+            { enemyHealth: 1.0, enemySpeed: 1.0, enemyCount: 10, goldMultiplier: 1.0, spawnBoss: false, batchSpawning: false },  // Wave 1
+            { enemyHealth: 1.2, enemySpeed: 1.0, enemyCount: 15, goldMultiplier: 1.2, spawnBoss: false, batchSpawning: false },  // Wave 2
+            { enemyHealth: 1.5, enemySpeed: 1.1, enemyCount: 20, goldMultiplier: 1.4, spawnBoss: false, batchSpawning: true },   // Wave 3
+            { enemyHealth: 1.8, enemySpeed: 1.2, enemyCount: 25, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4
+            { enemyHealth: 2.0, enemySpeed: 1.3, enemyCount: 30, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true },    // Wave 5
+            { enemyHealth: 2.5, enemySpeed: 1.5, enemyCount: 40, goldMultiplier: 2.0, spawnBoss: true, batchSpawning: true }     // Wave 6
+        ];
 
         // Game timing
         this.lastFrameTime = 0;
         this.deltaTime = 0;
         this.enemySpawnInterval = 2000; // ms
         this.lastEnemySpawnTime = 0;
-        // Increased number of enemies per wave and added more waves
-        this.enemiesPerWave = [10, 15, 20, 25, 30, 40]; // Number of enemies per wave
+        // Enemy counts now defined in waveSettings
         this.enemiesSpawned = 0;
         this.enemiesDefeated = 0;
+        
+        // Track active waves for multi-wave support
+        this.activeWaves = [];
+        this.wavesCompleted = 0;
 
         // Bind methods
         this.update = this.update.bind(this);
@@ -67,6 +93,9 @@ export class Game {
         this.gameOver = false;
         this.lastFrameTime = performance.now();
         
+        // Load saved wave settings if available
+        this.loadWaveSettings();
+        
         // Make sure map is initialized
         await this.map.initialize();
         
@@ -85,6 +114,9 @@ export class Game {
 
         // Update UI
         this.updateUI();
+        
+        // Create difficulty controls in the debug panel
+        this.createDifficultyControls();
         
         // Add CSS class for TCG integration
         document.body.classList.add('tcg-enabled');
@@ -120,20 +152,89 @@ export class Game {
             }
         }
 
-        // Spawn enemies during wave
-        if (this.waveInProgress && this.enemiesSpawned < this.enemiesPerWave[this.currentWave - 1]) {
+        // Spawn enemies for active waves
+        if (this.waveInProgress) {
             const now = currentTime;
-            if (now - this.lastEnemySpawnTime > this.enemySpawnInterval) {
-                this.spawnEnemy();
-                this.lastEnemySpawnTime = now;
+            
+            // Process each active wave
+            for (let i = 0; i < this.activeWaves.length; i++) {
+                const waveInfo = this.activeWaves[i];
+                
+                // Skip waves that are already complete
+                if (waveInfo.completed) continue;
+                
+                const waveIndex = waveInfo.waveNumber - 1;
+                if (waveIndex < this.waveSettings.length) {
+                    const waveSettings = this.waveSettings[waveIndex];
+                    const enemyCount = waveSettings.enemyCount;
+                    
+                    if (waveInfo.enemiesSpawned < enemyCount) {
+                        // Determine if this is the final enemy in the wave and it should be a boss
+                        const isBossSpawn = waveSettings.spawnBoss && waveInfo.enemiesSpawned === enemyCount - 1;
+                        
+                        // Adjust spawn interval based on difficulty settings and batch logic
+                        let adjustedInterval = this.enemySpawnInterval / this.difficultySettings.waveSpeedMultiplier;
+                        
+                        // Apply spawn interval multiplier (additional control)
+                        adjustedInterval = adjustedInterval / this.difficultySettings.spawnIntervalMultiplier;
+                        
+                        // Apply batch spawning logic if enabled for this wave
+                        if (waveSettings.batchSpawning) {
+                            // Create a batch pattern: fast spawns followed by a delay
+                            const batchSize = 3; // Number of enemies in a batch
+                            const batchPosition = waveInfo.enemiesSpawned % (batchSize + 1); 
+                            
+                            if (batchPosition < batchSize) {
+                                // Within a batch - spawn quickly
+                                adjustedInterval = adjustedInterval * 0.3; // Much faster spawns within a batch
+                            } else {
+                                // Between batches - longer delay
+                                adjustedInterval = adjustedInterval * 2.0; // Longer delay between batches
+                            }
+                        }
+                        
+                        // Skip delay for boss spawn to make it more dramatic (regardless of batch settings)
+                        if (isBossSpawn) {
+                            adjustedInterval = adjustedInterval * 2.5; // Dramatic pause before boss
+                        }
+                        
+                        // For waves after the first active wave, add a small additional delay
+                        if (i > 0) {
+                            adjustedInterval *= 1.2;
+                        }
+                        
+                        if (now - waveInfo.lastSpawnTime > adjustedInterval) {
+                            this.spawnEnemy(isBossSpawn, waveInfo);
+                            waveInfo.lastSpawnTime = now;
+                            
+                            // Also update the global last spawn time for backward compatibility
+                            if (waveInfo.waveNumber === this.currentWave) {
+                                this.lastEnemySpawnTime = now;
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // Check if wave completed
-        if (this.waveInProgress &&
-            this.enemiesSpawned === this.enemiesPerWave[this.currentWave - 1] &&
-            this.enemies.length === 0) {
-            this.completeWave();
+        // Check completion of all active waves
+        if (this.waveInProgress) {
+            // The individual enemy updates will trigger checkWaveCompletion
+            // We'll also check if all active waves are complete
+            if (this.activeWaves.length > 0 && 
+                this.activeWaves.every(w => w.completed || 
+                    (w.enemiesSpawned >= this.waveSettings[w.waveNumber - 1]?.enemyCount && w.enemiesAlive === 0))) {
+                
+                // If all waves are done, update game state
+                if (this.activeWaves.every(w => w.completed)) {
+                    this.waveInProgress = false;
+                    
+                    // If current wave is the max wave and all are complete, trigger victory
+                    if (this.currentWave >= this.maxWaves) {
+                        this.victory();
+                    }
+                }
+            }
         }
 
         // Update game entities
@@ -168,9 +269,40 @@ export class Game {
         requestAnimationFrame(this.update);
     }
 
-    startWave() {
-        if (this.waveInProgress) return;
+    startWave(forceSend = false) {
+        // If forceSend is true, we'll start the next wave even if a wave is in progress
+        // If a wave is already in progress and forceSend is false, we don't start another wave
+        if (this.waveInProgress && !forceSend) return;
 
+        // If we're already on the max wave and have sent all waves, don't allow more
+        const nextWaveNumber = forceSend && this.waveInProgress ? 
+            this.currentWave + 1 : this.currentWave;
+            
+        if (nextWaveNumber > this.maxWaves) {
+            console.log("Already at max wave, cannot send more waves");
+            return;
+        }
+
+        // Set up wave tracking info
+        const waveInfo = {
+            waveNumber: nextWaveNumber,
+            enemiesSpawned: 0,
+            enemiesAlive: 0,
+            enemiesDefeated: 0,
+            startTime: performance.now(),
+            lastSpawnTime: performance.now(),
+            completed: false
+        };
+        
+        // Add this wave to active waves
+        this.activeWaves.push(waveInfo);
+
+        // If we're force-sending and there's a wave in progress, increment the current wave
+        if (forceSend && this.waveInProgress) {
+            this.currentWave = nextWaveNumber;
+        }
+
+        // Initialize tracking variables for the new wave
         this.waveInProgress = true;
         this.enemiesSpawned = 0;
         this.enemiesDefeated = 0;
@@ -178,69 +310,125 @@ export class Game {
 
         // Update UI with current wave/max waves format
         document.getElementById('wave-number').textContent = `${this.currentWave}/${this.maxWaves}`;
+        
+        console.log(`Wave ${nextWaveNumber} started${forceSend ? ' (force sent)' : ''}`);
+        console.log(`Active waves: ${this.activeWaves.length}`);
     }
 
-    completeWave() {
-        this.waveInProgress = false;
+    // Check if a specific wave is complete
+    checkWaveCompletion(waveNumber) {
+        const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+        if (!waveInfo || waveInfo.completed) return;
+        
+        const waveIndex = waveInfo.waveNumber - 1;
+        if (waveIndex >= this.waveSettings.length) return;
+        
+        const enemyCount = this.waveSettings[waveIndex].enemyCount;
+        
+        // Check if all enemies for this wave have been spawned and defeated/reached end
+        if (waveInfo.enemiesSpawned >= enemyCount && waveInfo.enemiesAlive === 0) {
+            console.log(`Wave ${waveInfo.waveNumber} complete: ${waveInfo.enemiesDefeated} enemies defeated, ${enemyCount - waveInfo.enemiesDefeated} reached the end`);
+            
+            // Mark wave as completed
+            waveInfo.completed = true;
+            this.wavesCompleted++;
+            
+            // Call completeWave to give rewards
+            this.completeWave(waveInfo.waveNumber);
+            
+            // If this completed wave is the current wave and not the last wave,
+            // prepare to start the next wave if no waves were force-sent
+            if (waveInfo.waveNumber === this.currentWave && waveInfo.waveNumber < this.maxWaves && this.activeWaves.length <= 1) {
+                // Start next wave after delay, but only if no other waves in progress
+                this.currentWave++;
+                setTimeout(() => {
+                    if (!this.waveInProgress) {
+                        this.startWave();
+                    }
+                }, 5000);
+            }
+        }
+    }
+
+    completeWave(waveNumber = this.currentWave) {
+        // Find wave info object
+        const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+        if (!waveInfo) return;
+        
+        // If all active waves are completed, set waveInProgress to false
+        if (this.activeWaves.every(w => w.completed)) {
+            this.waveInProgress = false;
+        }
+        
+        // Determine wave index
+        const waveIndex = waveNumber - 1;
+        if (waveIndex >= this.waveSettings.length) return;
 
         // Reward player for completing the wave
         // Scale rewards for later waves to provide better economy
-        let waveBonus;
-        switch (this.currentWave) {
+        let baseWaveBonus;
+        switch (waveNumber) {
             case 1:
-                waveBonus = 50;
+                baseWaveBonus = 50;
                 break;
             case 2:
-                waveBonus = 100;
+                baseWaveBonus = 100;
                 break;
             case 3:
-                waveBonus = 150;
+                baseWaveBonus = 150;
                 break;
             case 4:
-                waveBonus = 220;
+                baseWaveBonus = 220;
                 break;
             case 5:
-                waveBonus = 300;
+                baseWaveBonus = 300;
                 break;
             case 6:
-                waveBonus = 400;
+                baseWaveBonus = 400;
                 break;
             default:
-                waveBonus = this.currentWave * 50;
+                baseWaveBonus = waveNumber * 50;
         }
         
+        // Apply gold multipliers
+        let waveBonus = baseWaveBonus;
+        
+        // Apply per-wave gold multiplier if available
+        if (this.waveSettings[waveIndex].goldMultiplier) {
+            waveBonus = Math.round(waveBonus * this.waveSettings[waveIndex].goldMultiplier);
+        }
+        
+        // Apply global gold multiplier
+        waveBonus = Math.round(waveBonus * this.difficultySettings.goldMultiplier);
+        
+        // Add rewards
         this.player.gold += waveBonus;
         this.player.score += waveBonus;
         
         // Show wave completion bonus message
-        this.showWaveCompletionMessage(waveBonus);
+        this.showWaveCompletionMessage(waveBonus, waveNumber);
 
         // Update UI
         this.updateUI();
         
         // Give TCG rewards and start new turn if TCG system is active
-        if (this.tcgIntegration) {
+        // Only do this for the current wave, not for force-sent waves that complete
+        if (this.tcgIntegration && waveNumber === this.currentWave) {
             // Start a new TCG turn (refresh mana, draw a card)
             this.tcgIntegration.startTurn();
         }
 
         // Check if all waves completed
-        if (this.currentWave >= this.maxWaves) {
+        if (waveNumber >= this.maxWaves && this.activeWaves.every(w => w.completed)) {
             this.victory();
-            return;
         }
-
-        // Start next wave after delay
-        this.currentWave++;
-        setTimeout(() => {
-            this.startWave();
-        }, 5000);
     }
 
-    spawnEnemy() {
+    spawnEnemy(isBoss = false, waveInfo = null) {
         // Determine enemy type based on wave and add elemental enemies in later waves
         let enemyType;
         let elementType = ElementTypes.NEUTRAL;
+        let isSpecialEnemy = false; // Track if this is a special enemy (boss or elemental)
         
         // In card debug mode, spawn a variety of enemies to test against
         if (this.cardDebugMode) {
@@ -332,6 +520,19 @@ export class Game {
             enemyType = `${elementType}_${enemyType}`;
         }
 
+        // If this is a boss, override the enemy type and make it special
+        if (isBoss) {
+            enemyType = 'golem'; // Use golem as base boss type
+            isSpecialEnemy = true;
+            
+            // Always give boss an element
+            if (elementType === ElementTypes.NEUTRAL) {
+                elementType = this.getRandomElement();
+            }
+            
+            console.log("Spawning boss enemy!");
+        }
+        
         // Find a random entry point at the top of the map
         const validEntryPoints = [];
         for (let x = 0; x < this.map.gridWidth; x++) {
@@ -347,9 +548,67 @@ export class Game {
         // Convert grid position to world position
         const startWorldPoint = this.map.gridToWorld(startGridPoint.x, startGridPoint.z);
 
+        // Determine which wave this enemy belongs to
+        const waveNumber = waveInfo ? waveInfo.waveNumber : this.currentWave;
+        const waveIndex = waveNumber - 1;
+        
+        // Debug enemy creation params
+        console.log(`[ENEMY DEBUG] Creating enemy: Type=${enemyType}, Position=${JSON.stringify(startWorldPoint)}, Wave=${waveNumber}`);
+        
         // Create and add enemy - with destination set to the bottom of the map
         const enemy = new Enemy(this, enemyType, startWorldPoint);
+        
+        // Associate enemy with its wave
+        enemy.waveNumber = waveNumber;
+        
+        // Debug enemy properties after creation
+        console.log(`[ENEMY DEBUG] Created enemy stats: Health=${enemy.health}, Speed=${enemy.baseSpeed}, Reward=${enemy.reward}, Wave=${waveNumber}`);
+        
+        // Apply boss stats if this is a boss
+        if (isBoss) {
+            // Apply boss stat multipliers
+            enemy.maxHealth *= this.difficultySettings.bossHealthMultiplier;
+            enemy.health = enemy.maxHealth;
+            enemy.baseSpeed *= this.difficultySettings.bossSpeedMultiplier;
+            enemy.reward *= 3; // Triple gold reward for bosses
+            
+            // Make boss visually larger
+            if (enemy.mesh) {
+                enemy.mesh.scale.set(1.5, 1.5, 1.5);
+            }
+        }
+        
+        // Apply randomness to enemy stats if enabled
+        if (this.difficultySettings.randomFactorMultiplier > 0 && !isBoss) {
+            const randomRange = this.difficultySettings.randomFactorMultiplier;
+            
+            // Generate random variation within the range [-randomRange/2, +randomRange]
+            // This creates more positive than negative variation for a slight challenge increase
+            const healthVariation = 1.0 + (Math.random() * randomRange - randomRange/3);
+            const speedVariation = 1.0 + (Math.random() * randomRange - randomRange/3);
+            
+            // Apply random variations
+            enemy.maxHealth *= healthVariation;
+            enemy.health = enemy.maxHealth;
+            enemy.baseSpeed *= speedVariation;
+        }
+        
+        // Apply per-wave gold multiplier based on the enemy's wave number
+        const enemyWaveIndex = waveNumber - 1;
+        if (enemyWaveIndex < this.waveSettings.length) {
+            const waveGoldMultiplier = this.waveSettings[enemyWaveIndex].goldMultiplier;
+            enemy.reward = Math.ceil(enemy.reward * waveGoldMultiplier * this.difficultySettings.goldMultiplier);
+        }
+        
         this.enemies.push(enemy);
+        
+        // Update wave tracking
+        if (waveInfo) {
+            waveInfo.enemiesSpawned++;
+            waveInfo.enemiesAlive++;
+        }
+        
+        // Also update global counter for backward compatibility
         this.enemiesSpawned++;
     }
 
@@ -371,6 +630,14 @@ export class Game {
                     this.createLifeFlashEffect();
                 }
 
+                // Find the wave info for this enemy
+                const waveNumber = enemy.waveNumber || this.currentWave;
+                const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+                
+                if (waveInfo) {
+                    waveInfo.enemiesAlive--;
+                }
+
                 // Remove enemy mesh from scene
                 if (enemy.mesh) {
                     this.renderer.scene.remove(enemy.mesh);
@@ -378,6 +645,9 @@ export class Game {
 
                 this.enemies.splice(i, 1);
                 this.updateUI();
+                
+                // Check wave completion
+                this.checkWaveCompletion(waveNumber);
 
                 // Check if game over (skip if infinite lives enabled)
                 if (this.player.lives <= 0 && !hasInfiniteLives) {
@@ -388,9 +658,54 @@ export class Game {
             }
             // Check if enemy was defeated
             else if (enemy.health <= 0) {
-                // Reward player
-                this.player.gold += enemy.reward;
-                this.player.score += enemy.reward;
+                // Reward player with gold multipliers applied correctly
+                // First ensure the enemy has a valid base reward
+                if (!enemy.reward || isNaN(enemy.reward) || enemy.reward <= 0) {
+                    // Fix missing reward based on enemy type
+                    if (enemy.type.includes('golem')) {
+                        enemy.reward = 50;
+                    } else if (enemy.type.includes('pirate')) {
+                        enemy.reward = 25;
+                    } else if (enemy.type.includes('elephant')) {
+                        enemy.reward = 15;
+                    } else {
+                        enemy.reward = 10; // Default for 'simple' enemies
+                    }
+                    console.log(`[ENEMY DEBUG] Fixed missing reward for enemy type ${enemy.type} to ${enemy.reward}`);
+                }
+                
+                // Get base reward
+                let baseReward = Math.round(enemy.reward);
+                
+                // Apply multipliers
+                // 1. Apply per-wave gold multiplier if available
+                const waveIndex = this.currentWave - 1;
+                let finalReward = baseReward;
+                if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
+                    finalReward = Math.round(finalReward * this.waveSettings[waveIndex].goldMultiplier);
+                }
+                
+                // 2. Apply global gold multiplier
+                if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
+                    finalReward = Math.round(finalReward * this.difficultySettings.goldMultiplier);
+                }
+                
+                // Make sure the reward is at least the base value
+                finalReward = Math.max(baseReward, finalReward);
+                
+                // Add the gold reward (with enhanced debug logging)
+                const oldGold = this.player.gold;
+                this.player.gold += finalReward;
+                this.player.score += finalReward;
+                
+                console.log(`[GOLD DEBUG] Enemy defeated: Type=${enemy.type}, Base reward=${baseReward}, Final reward=${finalReward}`);
+                console.log(`[GOLD DEBUG] Gold before: ${oldGold}, Gold after: ${this.player.gold}, Difference: ${this.player.gold - oldGold}`);
+                
+                // Ensure the gold is a valid number
+                if (isNaN(this.player.gold)) {
+                    console.error("[GOLD DEBUG] Gold became NaN! Resetting to previous value");
+                    this.player.gold = oldGold;
+                }
                 this.enemiesDefeated++;
                 
                 // TCG mana bonus for special enemies
@@ -415,6 +730,15 @@ export class Game {
                     this.createManaBonusEffect(enemy.position);
                 }
 
+                // Find the wave info for this enemy
+                const waveNumber = enemy.waveNumber || this.currentWave;
+                const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+                
+                if (waveInfo) {
+                    waveInfo.enemiesAlive--;
+                    waveInfo.enemiesDefeated++;
+                }
+
                 // Remove enemy mesh from scene
                 if (enemy.mesh) {
                     this.renderer.scene.remove(enemy.mesh);
@@ -422,6 +746,9 @@ export class Game {
 
                 this.enemies.splice(i, 1);
                 this.updateUI();
+                
+                // Check wave completion
+                this.checkWaveCompletion(waveNumber);
             }
         }
     }
@@ -468,7 +795,7 @@ export class Game {
         return closestEnemy;
     }
 
-    async placeTower(towerType, gridX, gridY) {
+    async placeTower(towerType, gridX, gridY, skipGoldCost = false) {
         console.log(`Attempting to place ${towerType} tower at grid: ${gridX}, ${gridY}`);
 
         // Check if cell is empty and tower can be placed
@@ -501,8 +828,8 @@ export class Game {
 
         const cost = costs[towerType] || 20; // Default cost if tower type not found
 
-        // Check if player has enough gold
-        if (this.player.gold < cost) {
+        // Check if player has enough gold (when not skipping cost check)
+        if (!skipGoldCost && this.player.gold < cost) {
             console.log("Tower placement failed: Not enough gold");
             return false;
         }
@@ -528,9 +855,24 @@ export class Game {
         this.map.placeTower(gridX, gridY);
         this.towers.push(tower);
 
-        // Deduct gold
-        this.player.gold -= cost;
-        this.updateUI();
+        // Deduct gold (when not skipping cost) with debug logging
+        if (!skipGoldCost) {
+            const oldGold = this.player.gold;
+            this.player.gold -= cost;
+            
+            console.log(`[GOLD DEBUG] Tower placed: Type=${towerType}, Cost=${cost}`);
+            console.log(`[GOLD DEBUG] Gold before: ${oldGold}, Gold after: ${this.player.gold}, Difference: ${oldGold - this.player.gold}`);
+            
+            // Ensure gold is a valid number
+            if (isNaN(this.player.gold)) {
+                console.error("[GOLD DEBUG] Gold became NaN during tower placement! Resetting to previous value");
+                this.player.gold = oldGold;
+            }
+            
+            this.updateUI();
+        } else {
+            console.log(`[GOLD DEBUG] Tower placed with skipGoldCost=true: Type=${towerType}`);
+        }
 
         console.log(`Tower placement successful at grid: ${gridX}, ${gridY}`);
         return true;
@@ -552,9 +894,13 @@ export class Game {
     }
 
     updateUI() {
+        // Update UI with current values
         document.getElementById('gold-amount').textContent = this.player.gold;
         document.getElementById('lives-amount').textContent = this.player.lives;
         document.getElementById('wave-number').textContent = `${this.currentWave}/${this.maxWaves}`;
+        
+        // Debug log to track gold updates
+        console.log(`[GOLD DEBUG] UI updated - Current gold: ${this.player.gold}`);
     }
 
     victory() {
@@ -587,6 +933,8 @@ export class Game {
         this.waveInProgress = false;
         this.enemiesSpawned = 0;
         this.enemiesDefeated = 0;
+        this.activeWaves = [];
+        this.wavesCompleted = 0;
         
         // Reset game flags
         this.gameOver = false;
@@ -706,13 +1054,426 @@ export class Game {
     toggleDebugMode() {
         this.debugMode = !this.debugMode;
         
+        // Toggle debug panel visibility
+        const debugPanel = document.getElementById('debug-panel');
+        const debugPanelButton = document.getElementById('toggle-debug-panel');
+        
+        if (debugPanel) {
+            debugPanel.classList.toggle('hidden', !this.debugMode);
+        }
+        
+        if (debugPanelButton) {
+            debugPanelButton.classList.toggle('hidden', !this.debugMode);
+        }
+        
         // Update path visualization visibility only in debug mode
         if (this.map && this.map.pathVisualization) {
             this.map.pathVisualization.visible = this.debugMode;
+            
+            // Update raycasting on path visualization
+            if (this.map.pathVisualization.raycast) {
+                if (this.debugMode) {
+                    // Store original raycaster and disable it
+                    this.map.pathVisualization.userData.originalRaycast = this.map.pathVisualization.raycast;
+                    this.map.pathVisualization.raycast = function() {};
+                } else if (this.map.pathVisualization.userData.originalRaycast) {
+                    // Restore original raycaster
+                    this.map.pathVisualization.raycast = this.map.pathVisualization.userData.originalRaycast;
+                }
+            }
+        }
+        
+        // Create difficulty sliders when debug mode is enabled
+        if (this.debugMode) {
+            this.createDifficultyControls();
         }
         
         // Log debug mode state
         console.log(`Debug mode ${this.debugMode ? 'enabled' : 'disabled'}`);
+    }
+    
+    // Create difficulty control panel
+    createDifficultyControls() {
+        // Target existing containers
+        const difficultyControls = document.getElementById('difficulty-controls');
+        const waveControls = document.getElementById('wave-controls');
+        
+        // If there are no containers, something is wrong with the HTML structure
+        if (!difficultyControls || !waveControls) {
+            console.error("Difficulty control containers not found in the DOM");
+            return;
+        }
+        
+        // Clear existing controls
+        difficultyControls.innerHTML = '<h3>Global Difficulty Settings</h3>';
+        waveControls.innerHTML = '<h3>Per-Wave Settings</h3>';
+        
+        // Create sliders for each difficulty setting
+        for (const key in this.difficultySettings) {
+            const label = key.replace(/([A-Z])/g, ' $1')
+                          .replace(/^./, str => str.toUpperCase());
+            
+            const controlGroup = document.createElement('div');
+            controlGroup.className = 'control-group';
+            
+            const sliderLabel = document.createElement('label');
+            sliderLabel.textContent = label + ': ';
+            
+            const valueDisplay = document.createElement('span');
+            valueDisplay.id = `difficulty-${key}-value`;
+            valueDisplay.textContent = this.difficultySettings[key].toFixed(2);
+            sliderLabel.appendChild(valueDisplay);
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = `difficulty-${key}`;
+            slider.min = key.includes('enemy') ? '0.5' : '0.2';
+            slider.max = key.includes('enemy') ? '3.0' : '5.0';
+            slider.step = '0.1';
+            slider.value = this.difficultySettings[key];
+            
+            // Add event listener to update difficulty when slider changes
+            slider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                valueDisplay.textContent = value.toFixed(2);
+                
+                // Update the setting in real-time
+                const settings = {};
+                settings[key] = value;
+                this.updateDifficultySettings(settings);
+            });
+            
+            controlGroup.appendChild(sliderLabel);
+            controlGroup.appendChild(slider);
+            difficultyControls.appendChild(controlGroup);
+        }
+        
+        // Add reset button
+        const resetButton = document.createElement('button');
+        resetButton.textContent = 'Reset Global Settings';
+        resetButton.className = 'debug-button';
+        resetButton.addEventListener('click', () => {
+            this.updateDifficultySettings({
+                enemyHealthMultiplier: 1.0,
+                enemySpeedMultiplier: 1.0,
+                goldMultiplier: 1.0,
+                towerDamageMultiplier: 1.0,
+                waveSpeedMultiplier: 1.0,
+                spawnIntervalMultiplier: 1.0,
+                randomFactorMultiplier: 0.2,
+                bossHealthMultiplier: 3.0,
+                bossSpeedMultiplier: 0.7
+            });
+        });
+        
+        difficultyControls.appendChild(resetButton);
+        
+        // Create a table for per-wave settings
+        const table = document.createElement('table');
+        table.className = 'wave-settings-table';
+        
+        // Create header row
+        const headerRow = document.createElement('tr');
+        ['Wave', 'Enemy Health', 'Enemy Speed', 'Enemy Count', 'Gold Mult', 'Boss', 'Batch', 'Actions'].forEach(text => {
+            const th = document.createElement('th');
+            th.textContent = text;
+            headerRow.appendChild(th);
+        });
+        table.appendChild(headerRow);
+        
+        // Create a row for each wave
+        this.waveSettings.forEach((wave, index) => {
+            const row = document.createElement('tr');
+            
+            // Wave number
+            const waveCell = document.createElement('td');
+            waveCell.textContent = `Wave ${index + 1}`;
+            row.appendChild(waveCell);
+            
+            // Health multiplier
+            const healthCell = document.createElement('td');
+            const healthInput = document.createElement('input');
+            healthInput.type = 'number';
+            healthInput.min = '0.5';
+            healthInput.max = '5';
+            healthInput.step = '0.1';
+            healthInput.value = wave.enemyHealth.toFixed(1);
+            healthInput.style.width = '4em';
+            healthInput.addEventListener('change', () => {
+                this.waveSettings[index].enemyHealth = parseFloat(healthInput.value);
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            healthCell.appendChild(healthInput);
+            row.appendChild(healthCell);
+            
+            // Speed multiplier
+            const speedCell = document.createElement('td');
+            const speedInput = document.createElement('input');
+            speedInput.type = 'number';
+            speedInput.min = '0.5';
+            speedInput.max = '3';
+            speedInput.step = '0.1';
+            speedInput.value = wave.enemySpeed.toFixed(1);
+            speedInput.style.width = '4em';
+            speedInput.addEventListener('change', () => {
+                this.waveSettings[index].enemySpeed = parseFloat(speedInput.value);
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            speedCell.appendChild(speedInput);
+            row.appendChild(speedCell);
+            
+            // Enemy count
+            const countCell = document.createElement('td');
+            const countInput = document.createElement('input');
+            countInput.type = 'number';
+            countInput.min = '5';
+            countInput.max = '100';
+            countInput.step = '1';
+            countInput.value = wave.enemyCount.toString();
+            countInput.style.width = '4em';
+            countInput.addEventListener('change', () => {
+                this.waveSettings[index].enemyCount = parseInt(countInput.value);
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            countCell.appendChild(countInput);
+            row.appendChild(countCell);
+            
+            // Gold multiplier
+            const goldMultCell = document.createElement('td');
+            const goldMultInput = document.createElement('input');
+            goldMultInput.type = 'number';
+            goldMultInput.min = '0.5';
+            goldMultInput.max = '5.0';
+            goldMultInput.step = '0.1';
+            goldMultInput.value = wave.goldMultiplier ? wave.goldMultiplier.toFixed(1) : '1.0';
+            goldMultInput.style.width = '4em';
+            goldMultInput.addEventListener('change', () => {
+                this.waveSettings[index].goldMultiplier = parseFloat(goldMultInput.value);
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            goldMultCell.appendChild(goldMultInput);
+            row.appendChild(goldMultCell);
+            
+            // Boss spawn checkbox
+            const bossCell = document.createElement('td');
+            const bossCheckbox = document.createElement('input');
+            bossCheckbox.type = 'checkbox';
+            bossCheckbox.checked = wave.spawnBoss || false;
+            bossCheckbox.addEventListener('change', () => {
+                this.waveSettings[index].spawnBoss = bossCheckbox.checked;
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            bossCell.appendChild(bossCheckbox);
+            row.appendChild(bossCell);
+            
+            // Batch spawning checkbox
+            const batchCell = document.createElement('td');
+            const batchCheckbox = document.createElement('input');
+            batchCheckbox.type = 'checkbox';
+            batchCheckbox.checked = wave.batchSpawning || false;
+            batchCheckbox.addEventListener('change', () => {
+                this.waveSettings[index].batchSpawning = batchCheckbox.checked;
+                // Save to local storage
+                this.saveWaveSettings();
+            });
+            batchCell.appendChild(batchCheckbox);
+            row.appendChild(batchCell);
+            
+            // Actions
+            const actionsCell = document.createElement('td');
+            // Delete wave button
+            if (this.waveSettings.length > 1) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '❌';
+                deleteBtn.title = 'Delete Wave';
+                deleteBtn.className = 'wave-action-btn';
+                deleteBtn.addEventListener('click', () => {
+                    this.waveSettings.splice(index, 1);
+                    this.createDifficultyControls(); // Refresh the control panel
+                    this.saveWaveSettings();
+                });
+                actionsCell.appendChild(deleteBtn);
+            }
+            row.appendChild(actionsCell);
+            
+            table.appendChild(row);
+        });
+        
+        waveControls.appendChild(table);
+        
+        // Add new wave button
+        const addWaveBtn = document.createElement('button');
+        addWaveBtn.textContent = 'Add Wave';
+        addWaveBtn.className = 'debug-button';
+        addWaveBtn.addEventListener('click', () => {
+            // Copy settings from the last wave and increase difficulty slightly
+            const lastWave = this.waveSettings[this.waveSettings.length - 1];
+            this.waveSettings.push({
+                enemyHealth: lastWave.enemyHealth * 1.2,
+                enemySpeed: lastWave.enemySpeed * 1.1,
+                enemyCount: Math.floor(lastWave.enemyCount * 1.2),
+                goldMultiplier: lastWave.goldMultiplier * 1.1, // Slightly increase gold rewards
+                spawnBoss: lastWave.spawnBoss || this.waveSettings.length > 3, // Add boss for later waves
+                batchSpawning: lastWave.batchSpawning || this.waveSettings.length > 2 // Add batch spawning for later waves
+            });
+            this.createDifficultyControls(); // Refresh the control panel
+            this.saveWaveSettings();
+        });
+        waveControls.appendChild(addWaveBtn);
+        
+        // Add export/import buttons
+        const exportImportDiv = document.createElement('div');
+        exportImportDiv.className = 'export-import-buttons';
+        
+        const exportBtn = document.createElement('button');
+        exportBtn.textContent = 'Export Settings';
+        exportBtn.className = 'debug-button';
+        exportBtn.addEventListener('click', () => {
+            this.exportSettings();
+        });
+        exportImportDiv.appendChild(exportBtn);
+        
+        const importBtn = document.createElement('button');
+        importBtn.textContent = 'Import Settings';
+        importBtn.className = 'debug-button';
+        importBtn.addEventListener('click', () => {
+            this.importSettings();
+        });
+        exportImportDiv.appendChild(importBtn);
+        
+        waveControls.appendChild(exportImportDiv);
+        
+        console.log("Difficulty controls updated");
+    }
+    
+    saveWaveSettings() {
+        try {
+            localStorage.setItem('waveSettings', JSON.stringify(this.waveSettings));
+            console.log('Wave settings saved to local storage');
+        } catch (e) {
+            console.error('Failed to save wave settings:', e);
+        }
+    }
+    
+    loadWaveSettings() {
+        try {
+            const savedSettings = localStorage.getItem('waveSettings');
+            if (savedSettings) {
+                this.waveSettings = JSON.parse(savedSettings);
+                console.log('Wave settings loaded from local storage');
+            }
+        } catch (e) {
+            console.error('Failed to load wave settings:', e);
+        }
+    }
+    
+    exportSettings() {
+        const settings = {
+            globalSettings: this.difficultySettings,
+            waveSettings: this.waveSettings
+        };
+        
+        // Create a data URL for the settings
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(settings, null, 2));
+        
+        // Create download link
+        const downloadLink = document.createElement('a');
+        downloadLink.setAttribute("href", dataStr);
+        downloadLink.setAttribute("download", "tower_defense_settings.json");
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    }
+    
+    importSettings() {
+        // Create a file input element
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const settings = JSON.parse(e.target.result);
+                    
+                    // Update settings
+                    if (settings.globalSettings) {
+                        this.updateDifficultySettings(settings.globalSettings);
+                    }
+                    
+                    if (settings.waveSettings) {
+                        this.waveSettings = settings.waveSettings;
+                        this.saveWaveSettings();
+                    }
+                    
+                    // Refresh the control panel
+                    this.createDifficultyControls();
+                    
+                    alert('Settings imported successfully!');
+                } catch (error) {
+                    console.error('Error importing settings:', error);
+                    alert('Error importing settings. Please check the file format.');
+                }
+            };
+            
+            reader.readAsText(file);
+            document.body.removeChild(fileInput);
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+    }
+    
+    // Update difficulty settings
+    updateDifficultySettings(settings) {
+        // Update difficulty settings
+        for (const key in settings) {
+            if (this.difficultySettings.hasOwnProperty(key)) {
+                this.difficultySettings[key] = settings[key];
+            }
+        }
+        
+        // Apply to existing enemies by rebuilding their stats
+        this.enemies.forEach(enemy => {
+            const oldHealth = enemy.health;
+            const oldMaxHealth = enemy.maxHealth;
+            const healthPercent = oldHealth / oldMaxHealth;
+            
+            // Reset and reapply stats with new multipliers
+            enemy.setStats();
+            
+            // Keep same health percentage 
+            enemy.health = enemy.maxHealth * healthPercent;
+        });
+        
+        // Update UI if there's a difficulty UI display
+        this.updateDifficultyUI();
+    }
+    
+    // Update difficulty UI elements
+    updateDifficultyUI() {
+        // Update each slider if it exists
+        for (const key in this.difficultySettings) {
+            const slider = document.getElementById(`difficulty-${key}`);
+            if (slider) {
+                slider.value = this.difficultySettings[key];
+            }
+            
+            const label = document.getElementById(`difficulty-${key}-value`);
+            if (label) {
+                label.textContent = this.difficultySettings[key].toFixed(2);
+            }
+        }
     }
     
     toggleCardDebugMode() {
@@ -760,6 +1521,13 @@ export class Game {
             
             // Show debug panel button
             document.getElementById('toggle-debug-panel').classList.remove('hidden');
+            
+            // Show and update the debug panel
+            const debugPanel = document.getElementById('debug-panel');
+            debugPanel.classList.remove('hidden');
+            
+            // Create difficulty controls
+            this.createDifficultyControls();
             
             // Setup debug enemy showcase if not already done
             this.setupEnemyShowcase();
@@ -1034,11 +1802,11 @@ export class Game {
         return elements[Math.floor(Math.random() * elements.length)];
     }
     
-    showWaveCompletionMessage(amount) {
+    showWaveCompletionMessage(amount, waveNumber = this.currentWave) {
         // Create a visual message for wave completion bonus
         if (!this.renderer) return;
         
-        const message = `Wave ${this.currentWave} Complete! +${amount} Gold`;
+        const message = `Wave ${waveNumber} Complete! +${amount} Gold`;
         
         // Create a text canvas with more width to avoid text cutting
         const canvas = document.createElement('canvas');

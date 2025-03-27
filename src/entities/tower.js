@@ -30,6 +30,10 @@ export class Tower {
         
         // Element effects tracker
         this.appliedEffects = [];
+        
+        // Tower effect state 
+        this.shield = 0; // Damage reduction percentage (0.5 = 50% reduction)
+        this.hasteMultiplier = 1.0; // Attack speed multiplier (1.5 = 50% faster)
 
         // Create 3D representation
         this.mesh = this.game.renderer.createTower(this);
@@ -190,9 +194,22 @@ export class Tower {
             
             if (effect.remainingDuration <= 0) {
                 // Remove effect
+                switch (effect.type) {
+                    case 'shield':
+                        this.shield = 0;
+                        break;
+                        
+                    case 'haste':
+                        this.hasteMultiplier = 1.0;
+                        break;
+                }
+                
                 this.appliedEffects.splice(i, 1);
             }
         }
+        
+        // Process any active effects
+        this.processEffects(deltaTime);
     }
 
     canFire() {
@@ -211,6 +228,11 @@ export class Tower {
                 rate *= effect.value;
             }
         });
+        
+        // Apply haste effect
+        if (this.hasteMultiplier > 1.0) {
+            rate *= this.hasteMultiplier;
+        }
         
         return rate;
     }
@@ -323,6 +345,11 @@ export class Tower {
     calculateDamage(target) {
         let damage = this.damage * this.empowermentMultiplier;
         
+        // Apply game difficulty multiplier
+        if (this.game.difficultySettings) {
+            damage *= this.game.difficultySettings.towerDamageMultiplier;
+        }
+        
         // Apply effect modifiers
         this.appliedEffects.forEach(effect => {
             if (effect.type === 'damage') {
@@ -379,5 +406,46 @@ export class Tower {
             value: value,
             remainingDuration: duration
         });
+        
+        // Apply effect immediately
+        switch (effectType) {
+            case 'shield':
+                // Damage reduction
+                this.shield = value; // 0.5 = 50% damage reduction
+                break;
+            
+            case 'haste':
+                // Attack speed boost
+                this.hasteMultiplier = value; // 1.5 = 50% faster attacks
+                break;
+                
+            // Add more effect types as needed
+        }
+    }
+    
+    // Process active effects (call in update method)
+    processEffects(deltaTime) {
+        // Process each effect and remove expired ones
+        for (let i = this.appliedEffects.length - 1; i >= 0; i--) {
+            const effect = this.appliedEffects[i];
+            
+            // Decrease duration
+            effect.remainingDuration -= deltaTime;
+            
+            if (effect.remainingDuration <= 0) {
+                // Effect expired, remove it
+                switch (effect.type) {
+                    case 'shield':
+                        this.shield = 0;
+                        break;
+                        
+                    case 'haste':
+                        this.hasteMultiplier = 1.0;
+                        break;
+                }
+                
+                this.appliedEffects.splice(i, 1);
+            }
+        }
     }
 }

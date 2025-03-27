@@ -46,12 +46,28 @@ export class Renderer {
             this.isRotating = true;
             this.lastControlsUpdate = Date.now();
             console.log("Camera controls started");
+            
+            // Disable raycasting during rotation
+            this.scene.traverse(obj => {
+                if (obj.isMesh && !obj.userData.isGround) {
+                    obj.userData.oldRaycast = obj.raycast;
+                    obj.raycast = function() {}; // Empty raycast function
+                }
+            });
         });
         
         this.controls.addEventListener('end', () => {
             // End rotation state immediately - allows for quicker tower placement
             this.isRotating = false;
             console.log("Camera controls ended");
+            
+            // Re-enable raycasting
+            this.scene.traverse(obj => {
+                if (obj.isMesh && obj.userData.oldRaycast) {
+                    obj.raycast = obj.userData.oldRaycast;
+                    delete obj.userData.oldRaycast;
+                }
+            });
         });
         
         // Also track control updates to detect rotation
@@ -515,6 +531,7 @@ export class Renderer {
         ground.rotation.x = -Math.PI / 2; // Rotate to horizontal
         ground.position.y = 0; // EXACTLY at zero - critical for proper shading
         ground.receiveShadow = true; // Make ground receive shadows
+        ground.userData.isGround = true; // Mark as ground for raycasting
         
         mapGroup.add(ground);
         

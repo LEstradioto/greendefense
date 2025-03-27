@@ -90,6 +90,218 @@ export class PowerCards {
         }, 1000); // Delay damage until meteor impacts
     }
     
+    createShieldEffect(position) {
+        // Create shield visual effect
+        const THREE = this.game.renderer.THREE;
+        const radius = 0.6;
+        const geometry = new THREE.SphereGeometry(radius, 16, 16);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x8BC34A,
+            transparent: true,
+            opacity: 0.5,
+            wireframe: true
+        });
+        
+        const shield = new THREE.Mesh(geometry, material);
+        shield.position.set(position.x, position.y, position.z);
+        this.game.renderer.scene.add(shield);
+        
+        const startTime = performance.now();
+        const duration = 5000; // 5 seconds
+        
+        // Return effect object with update method
+        return {
+            update: (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = elapsed / duration;
+                
+                if (progress >= 1.0) {
+                    // Remove effect when done
+                    this.game.renderer.scene.remove(shield);
+                    return true;
+                }
+                
+                // Pulse effect
+                const scale = 1.0 + 0.2 * Math.sin(progress * Math.PI * 10);
+                shield.scale.set(scale, scale, scale);
+                
+                // Fade out at the end
+                if (progress > 0.7) {
+                    material.opacity = 0.5 * (1.0 - (progress - 0.7) / 0.3);
+                }
+                
+                return false;
+            }
+        };
+    }
+    
+    createWindEffect(position) {
+        // Create wind rush visual effect
+        const THREE = this.game.renderer.THREE;
+        
+        // Create spiral particles
+        const particleCount = 20;
+        const particles = new THREE.Group();
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particleGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0x81D4FA,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+            
+            // Position particles in a spiral
+            const angle = (i / particleCount) * Math.PI * 2;
+            const radius = 0.3 + (i / particleCount) * 0.5;
+            
+            particle.position.set(
+                position.x + Math.cos(angle) * radius,
+                position.y,
+                position.z + Math.sin(angle) * radius
+            );
+            
+            // Store original position and angle for animation
+            particle.userData.angle = angle;
+            particle.userData.radius = radius;
+            particle.userData.speed = 0.05 + Math.random() * 0.1;
+            particle.userData.ySpeed = 0.02 + Math.random() * 0.03;
+            
+            particles.add(particle);
+        }
+        
+        this.game.renderer.scene.add(particles);
+        
+        const startTime = performance.now();
+        const duration = 4000; // 4 seconds
+        
+        // Return effect object with update method
+        return {
+            update: (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = elapsed / duration;
+                
+                if (progress >= 1.0) {
+                    // Remove effect when done
+                    this.game.renderer.scene.remove(particles);
+                    return true;
+                }
+                
+                // Animate particles in a spiral motion
+                particles.children.forEach((particle, i) => {
+                    // Rotate around center
+                    particle.userData.angle += particle.userData.speed;
+                    
+                    // Expand radius and rise up
+                    const newRadius = particle.userData.radius * (1 + progress * 2);
+                    const height = position.y + progress * 2 * particle.userData.ySpeed * elapsed;
+                    
+                    particle.position.set(
+                        position.x + Math.cos(particle.userData.angle) * newRadius,
+                        height,
+                        position.z + Math.sin(particle.userData.angle) * newRadius
+                    );
+                    
+                    // Fade out
+                    if (progress > 0.7) {
+                        particle.material.opacity = 0.7 * (1.0 - (progress - 0.7) / 0.3);
+                    }
+                });
+                
+                return false;
+            }
+        };
+    }
+    
+    createDrainEffect(position) {
+        // Create void drain visual effect
+        const THREE = this.game.renderer.THREE;
+        
+        // Create dark particles that converge
+        const particleCount = 15;
+        const particles = new THREE.Group();
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particleGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0x7E57C2,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+            
+            // Position particles randomly around the position
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 0.5 + Math.random() * 1.0;
+            const height = position.y + Math.random() * 1.0;
+            
+            particle.position.set(
+                position.x + Math.cos(angle) * radius,
+                height,
+                position.z + Math.sin(angle) * radius
+            );
+            
+            // Store target position for animation
+            particle.userData.startPos = { 
+                x: particle.position.x,
+                y: particle.position.y,
+                z: particle.position.z
+            };
+            
+            particles.add(particle);
+        }
+        
+        this.game.renderer.scene.add(particles);
+        
+        const startTime = performance.now();
+        const duration = 3000; // 3 seconds
+        
+        // Return effect object with update method
+        return {
+            update: (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = elapsed / duration;
+                
+                if (progress >= 1.0) {
+                    // Remove effect when done
+                    this.game.renderer.scene.remove(particles);
+                    return true;
+                }
+                
+                // Move particles toward center in a spiral
+                particles.children.forEach((particle) => {
+                    // Get closer to target (converge)
+                    const startPos = particle.userData.startPos;
+                    
+                    particle.position.set(
+                        startPos.x + (position.x - startPos.x) * progress,
+                        startPos.y + (position.y - startPos.y) * progress,
+                        startPos.z + (position.z - startPos.z) * progress
+                    );
+                    
+                    // Add some spiral motion
+                    const spiralAngle = progress * Math.PI * 4;
+                    const spiralRadius = (1 - progress) * 0.4;
+                    
+                    particle.position.x += Math.cos(spiralAngle) * spiralRadius;
+                    particle.position.z += Math.sin(spiralAngle) * spiralRadius;
+                    
+                    // Shrink particles as they converge
+                    const scale = 1.0 - progress * 0.7;
+                    particle.scale.set(scale, scale, scale);
+                    
+                    // Pulse opacity
+                    particle.material.opacity = 0.8 * (1 - 0.5 * Math.sin(progress * Math.PI * 8));
+                });
+                
+                return false;
+            }
+        };
+    }
+    
     createMeteorEffect(position, element = 'fire') {
         // Create a meteor visual effect
         const meteorRadius = 0.5;

@@ -109,10 +109,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Setup debug panel toggle
-    document.getElementById('toggle-debug-panel').addEventListener('click', () => {
+    const debugPanelToggle = document.getElementById('toggle-debug-panel');
+    debugPanelToggle.addEventListener('click', () => {
         const panel = document.getElementById('debug-panel');
         panel.classList.toggle('hidden');
     });
+    
+    // Initially hide the debug panel toggle (will be shown when debug mode is enabled)
+    debugPanelToggle.classList.add('hidden');
     
     // Setup debug element buttons (for enemy spawning)
     document.querySelectorAll('.element-btn').forEach(btn => {
@@ -147,6 +151,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('debug-start-wave').addEventListener('click', () => {
         window.game.debugStartWave();
+    });
+    
+    // Setup Send Next Wave button
+    document.getElementById('send-next-wave-button').addEventListener('click', () => {
+        // Only allow if game is started
+        if (window.game && window.game.gameStarted && !window.game.gameOver) {
+            window.game.startWave(true); // Force send the next wave
+        }
     });
     
     // Grid style controls

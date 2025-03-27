@@ -10,8 +10,14 @@ export class EasyStarPathfinding {
         // Set acceptable tiles (1 is for path in our grid system)
         this.easystar.setAcceptableTiles([1]);
 
-        // Enable diagonals if needed (our game currently doesn't use diagonals)
-        // this.easystar.enableDiagonals();
+        // Enable diagonal movement for more natural pathfinding
+        this.easystar.enableDiagonals();
+        
+        // Make diagonal movement slightly more expensive to prefer straight paths when appropriate
+        this.easystar.setDirectionalCondition((x, y, direction) => {
+            // In EasyStar, direction is 0-3 for cardinal and 4-7 for diagonal
+            return direction < 4 ? 1.0 : 1.4; // Sqrt(2) is approximately 1.414
+        });
 
         // Set grid when the map is ready
         if (map.grid && map.grid.length > 0) {

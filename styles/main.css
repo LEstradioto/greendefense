@@ -81,6 +81,33 @@ body {
     font-weight: 600;
 }
 
+#next-wave-control {
+    display: flex;
+    align-items: center;
+    margin: 0 8px;
+}
+
+#send-next-wave-button {
+    background-color: #e74c3c;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+
+#send-next-wave-button:hover {
+    background-color: #c0392b;
+    transform: scale(1.05);
+}
+
+#send-next-wave-button:active {
+    transform: scale(0.95);
+}
+
 #debug-controls {
     margin-left: auto;
 }
@@ -112,22 +139,22 @@ body {
 }
 
 #gold::before {
-    content: "💰";
+    content: "\1F4B0"; /* Unicode for money bag emoji */
     margin-right: 8px;
 }
 
 #lives::before {
-    content: "❤️";
+    content: "\2764\FE0F"; /* Unicode for red heart emoji */
     margin-right: 8px;
 }
 
 #wave::before {
-    content: "🌊";
+    content: "\1F30A"; /* Unicode for wave emoji */
     margin-right: 8px;
 }
 
 #mana-counter::before {
-    content: "✨";
+    content: "\2728"; /* Unicode for sparkles emoji */
     margin-right: 8px;
 }
 
@@ -988,4 +1015,125 @@ button:active {
 
 .card-debug-mode #toggle-debug-panel {
     display: inline-block;
+}
+
+/* Difficulty Controls Styles */
+#difficulty-controls {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: rgba(76, 175, 80, 0.1);
+    border-radius: 8px;
+}
+
+#difficulty-controls h3 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: #4CAF50;
+    text-align: center;
+}
+
+.control-group {
+    margin-bottom: 12px;
+}
+
+.control-group label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+}
+
+.control-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: linear-gradient(to right, #2980b9, #27ae60);
+    border-radius: 3px;
+    outline: none;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    border: 2px solid #4CAF50;
+}
+
+.debug-button {
+    background-color: #4CAF50;
+    color: white;
+    padding: 6px 10px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+    margin-right: 5px;
+}
+
+.debug-button:hover {
+    background-color: #2E7D32;
+}
+
+#wave-controls {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: rgba(76, 175, 80, 0.1);
+    border-radius: 8px;
+}
+
+#wave-controls h3 {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: #4CAF50;
+    text-align: center;
+}
+
+.wave-settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+}
+
+.wave-settings-table th,
+.wave-settings-table td {
+    padding: 8px 4px;
+    text-align: center;
+    border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.wave-settings-table th {
+    color: #4CAF50;
+    font-size: 12px;
+}
+
+.wave-settings-table input {
+    width: 50px;
+    padding: 3px;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid #4CAF50;
+    border-radius: 3px;
+    color: white;
+    text-align: center;
+}
+
+.wave-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    color: #e74c3c;
+}
+
+.export-import-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    justify-content: center;
 }

@@ -49,7 +49,13 @@ export class Enemy {
     }
 
     setStats() {
-        switch (this.type) {
+        // Base stats depending on enemy type
+        console.log("[ENEMY DEBUG] Setting stats for enemy type:", this.type);
+        
+        // Ensure type is a string before doing string operations
+        const enemyType = String(this.type);
+        
+        switch (enemyType) {
             case 'simple':
                 this.health = 100;
                 this.maxHealth = 100;
@@ -121,6 +127,37 @@ export class Enemy {
                 this.baseSpeed = 3;
                 this.reward = 10;
                 this.element = ElementTypes.NEUTRAL;
+        }
+        
+        // Apply per-wave and global difficulty settings to scale enemy stats
+        if (this.game.waveSettings && this.game.currentWave > 0 && 
+            this.game.currentWave <= this.game.waveSettings.length) {
+            
+            // Apply per-wave multipliers
+            const waveSettings = this.game.waveSettings[this.game.currentWave - 1];
+            this.health *= waveSettings.enemyHealth;
+            this.maxHealth *= waveSettings.enemyHealth;
+            this.baseSpeed *= waveSettings.enemySpeed;
+        }
+        
+        // Apply global difficulty settings
+        if (this.game.difficultySettings) {
+            // Apply health multiplier
+            this.health *= this.game.difficultySettings.enemyHealthMultiplier;
+            this.maxHealth *= this.game.difficultySettings.enemyHealthMultiplier;
+            
+            // Apply speed multiplier
+            this.baseSpeed *= this.game.difficultySettings.enemySpeedMultiplier;
+            
+            // REMOVED gold multiplier from here - it will be applied when enemy is defeated
+        }
+        
+        // Final sanity check to ensure reward is valid no matter what
+        if (isNaN(this.reward) || !isFinite(this.reward) || this.reward <= 0) {
+            console.warn("Invalid enemy reward detected, resetting to default value");
+            this.reward = this.type.includes('golem') ? 50 : 
+                         this.type.includes('pirate') ? 25 : 
+                         this.type.includes('elephant') ? 15 : 10; // Default fallback values by type
         }
     }
 
@@ -290,6 +327,15 @@ export class Enemy {
         this.position.x = validPosition.x;
         this.position.y = validPosition.y;
         this.position.z = validPosition.z;
+        
+        // Rotate enemy to face movement direction (for diagonal movement)
+        if (this.mesh && (direction.x !== 0 || direction.z !== 0)) {
+            // Calculate angle from direction vector (in radians)
+            const angle = Math.atan2(direction.x, direction.z);
+            
+            // Set the y-rotation of the mesh to face the movement direction
+            this.mesh.rotation.y = angle;
+        }
     }
 
     // Alternative version of ensurePositionInBounds that takes a new position

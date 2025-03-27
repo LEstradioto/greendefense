@@ -18,6 +18,9 @@
                 <div id="lives">Lives: <span id="lives-amount">20</span></div>
                 <div id="wave">Wave: <span id="wave-number">1/6</span></div>
                 <div id="mana-counter" class="hidden">Mana: <span id="mana-amount">5</span>/<span id="max-mana-amount">5</span></div>
+                <div id="next-wave-control">
+                    <button id="send-next-wave-button" class="action-button">Send Next Wave</button>
+                </div>
                 <div id="debug-controls">
                     <button id="toggle-card-debug">🎮 Debug Cards</button>
                     <button id="toggle-debug-panel" class="hidden">🛠️ Debug Panel</button>
@@ -64,6 +67,15 @@
                         <div class="debug-wave-controls">
                             <button id="debug-complete-wave">Complete Current Wave</button>
                             <button id="debug-start-wave">Start Next Wave</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <div class="section-title">Difficulty Settings</div>
+                        <div id="difficulty-controls">
+                            <!-- This will be populated by the game.js createDifficultyControls method -->
+                        </div>
+                        <div id="wave-controls">
+                            <!-- This will be populated by the game.js createDifficultyControls method -->
                         </div>
                     </div>
                     <div class="debug-enemy-showcase hidden">
