@@ -10,12 +10,14 @@ export class Renderer {
         this.camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, 1000);
 
         // Set up renderer with enhanced quality settings
+        // Enable stencil buffer to prevent unwanted rendering artifacts with ground plane
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
             powerPreference: 'high-performance',
             alpha: true,
-            preserveDrawingBuffer: true
+            preserveDrawingBuffer: true,
+            stencil: true // Enable stencil buffer
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x000000); // Black background
@@ -26,6 +28,10 @@ export class Renderer {
         this.renderer.physicallyCorrectLights = true; // More accurate light attenuation
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.0;
+        
+        // Set specific renderer sorting parameters to help with transparent objects
+        this.renderer.sortObjects = true; // Force manual sorting for transparent objects
+        this.renderer.autoClear = false; // We'll handle clearing manually
 
         // Set up camera
         this.camera.position.set(0, 50, 40);
@@ -544,7 +550,41 @@ export class Renderer {
             }
         }
         
-        // Render scene
+        // Custom render process with stencil buffer to fix ground rendering issues
+        
+        // 1. Clear everything
+        this.renderer.clear(true, true, true);
+        
+        // 2. First pass: render only the ground to set up stencil buffer
+        // Find the ground objects
+        let groundObjects = [];
+        if (game.map && game.map.mapGroup) {
+            if (game.map.mapGroup.userData.ground) {
+                groundObjects.push(game.map.mapGroup.userData.ground);
+            }
+            if (game.map.mapGroup.userData.bottomCover) {
+                groundObjects.push(game.map.mapGroup.userData.bottomCover);
+            }
+        }
+        
+        // Set visibility for ground-only pass
+        const originalVisibility = new Map();
+        this.scene.traverse(obj => {
+            if (obj.isMesh && !groundObjects.includes(obj)) {
+                originalVisibility.set(obj, obj.visible);
+                obj.visible = false;
+            }
+        });
+        
+        // Render only ground objects to set up stencil
+        this.renderer.render(this.scene, this.camera);
+        
+        // 3. Restore visibility for all objects
+        originalVisibility.forEach((visible, obj) => {
+            obj.visible = visible;
+        });
+        
+        // 4. Final pass: render the entire scene
         this.renderer.render(this.scene, this.camera);
     }
 
@@ -554,34 +594,86 @@ export class Renderer {
         // Create a single seamless ground plane - no segments to avoid the middle line
         const groundGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, 1, 1); // Use just 1 segment
         
-        // Create ground mesh with darker material for better shadow visibility
+        // Create a composite ground solution to solve rendering issues
+        
+        // First layer: Main ground with standard material
+        // Using special material properties to work with our stencil buffer
         const groundMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x2c8e43, // Darker green to show shadows better
+            color: 0x1a6b30, // Darker green (adjusted to be less bright)
             roughness: 1.0,  // Maximum roughness for shadow visibility
             metalness: 0.0,  // No metalness
             emissive: 0x0, // No emissive
             emissiveIntensity: 0, // No emissive glow
-            side: THREE.FrontSide, // Only render front side
-            depthWrite: true // Ensure proper depth writing
+            side: THREE.DoubleSide, // Render BOTH sides to prevent one-sided visibility issues
+            depthWrite: true, // Ensure proper depth writing
+            polygonOffset: true, // Enable polygon offset
+            polygonOffsetFactor: -1, // Pull ground towards camera slightly
+            polygonOffsetUnits: -1, // This helps prevent z-fighting with explosion effects
+            stencilWrite: true, // Enable stencil buffer writing
+            stencilRef: 1, // Set stencil reference value
+            stencilFunc: THREE.AlwaysStencilFunc, // Always write to stencil buffer
+            stencilZPass: THREE.ReplaceStencilOp // Replace stencil value on z-pass
         });
         
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        
-        // No vertex displacement - keeping it flat helps with shadow rendering
-        
         ground.rotation.x = -Math.PI / 2; // Rotate to horizontal
         ground.position.y = 0; // EXACTLY at zero - critical for proper shading
         ground.receiveShadow = true; // Make ground receive shadows
         ground.userData.isGround = true; // Mark as ground for raycasting
         
+        // Second layer: Invisible collision plane to ensure projectiles don't go through ground
+        // This helps prevent the backface visibility issue during explosions
+        const collisionPlaneGeometry = new THREE.PlaneGeometry(gridSize.width + 2, gridSize.height + 2, 1, 1);
+        const collisionPlaneMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.0,
+            side: THREE.DoubleSide,
+            depthWrite: true
+        });
+        
+        const collisionPlane = new THREE.Mesh(collisionPlaneGeometry, collisionPlaneMaterial);
+        collisionPlane.rotation.x = -Math.PI / 2;
+        collisionPlane.position.y = -0.01; // Slightly below ground to prevent z-fighting
+        collisionPlane.userData.isGroundCollider = true;
+        
+        // Third layer: Bottom cover to prevent seeing "through" the ground
+        // This solves the issue of seeing through the ground during explosions
+        const bottomCoverGeometry = new THREE.PlaneGeometry(gridSize.width + 4, gridSize.height + 4, 1, 1);
+        const bottomCoverMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0a2212, // Even darker version of the ground color
+            side: THREE.FrontSide,
+            depthWrite: true,
+            transparent: false, // Not transparent
+            polygonOffset: true, // Enable polygon offset
+            polygonOffsetFactor: -2, // Higher offset than ground
+            polygonOffsetUnits: -2,
+            stencilWrite: true, // Enable stencil buffer writing
+            stencilRef: 2, // Different stencil reference value
+            stencilFunc: THREE.AlwaysStencilFunc,
+            stencilZPass: THREE.ReplaceStencilOp
+        });
+        
+        const bottomCover = new THREE.Mesh(bottomCoverGeometry, bottomCoverMaterial);
+        bottomCover.rotation.x = Math.PI / 2; // Facing UPWARD from below
+        bottomCover.position.y = -0.05; // Below the ground
+        
+        // Add all layers to the mapGroup
         mapGroup.add(ground);
+        mapGroup.add(collisionPlane);
+        mapGroup.add(bottomCover);
+        
+        // Store references for easy access
+        mapGroup.userData.ground = ground;
+        mapGroup.userData.collisionPlane = collisionPlane;
+        mapGroup.userData.bottomCover = bottomCover;
         
         // Add a subtle green glow layer above the ground, very faint to not interfere with shadows
         const glowGeometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
         const glowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x4AFF8D, // Bright mint green color
+            color: 0x2ABF68, // Less bright mint green color
             transparent: true,
-            opacity: 0.05, // Very faint glow to ensure shadows are visible
+            opacity: 0.03, // Reduced opacity to be more subtle
             blending: THREE.AdditiveBlending
         });
         
