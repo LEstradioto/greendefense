@@ -1872,6 +1872,25 @@ export class Game {
         return Math.sqrt(dx * dx + dz * dz);
     }
     
+    findClosestEnemyInRange(position, range) {
+        // Similar to findTarget but with explicitly passed position and range
+        let closestEnemy = null;
+        let closestDistance = Infinity;
+
+        for (const enemy of this.enemies) {
+            // Skip enemies that have reached the end or are dead
+            if (enemy.reachedEnd || enemy.health <= 0) continue;
+            
+            const distance = this.calculateDistance(position, enemy.position);
+            if (distance <= range && distance < closestDistance) {
+                closestEnemy = enemy;
+                closestDistance = distance;
+            }
+        }
+
+        return closestEnemy;
+    }
+    
     getRandomElement() {
         // Return a random element type (excluding NEUTRAL)
         const elements = [

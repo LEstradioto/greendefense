@@ -8,6 +8,7 @@ window.OrbitControls = OrbitControls;
 // Import our game components
 import { Game } from './src/game.js';
 import { UI } from './src/ui.js';
+import { LofiMusicPlayer } from './src/lofiMusic.js';
 
 // Three.js version info removed for production
 

@@ -1365,16 +1365,45 @@ export class Renderer {
             // Standard tower types
             switch (tower.type) {
                 case 'arrow':
-                    // Cone-shaped top for arrow tower
+                    // Create a group for arrow tower top
+                    const arrowGroup = new THREE.Group();
+                    
+                    // Base top shape
                     const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
-                    top = new THREE.Mesh(topGeometry, topMaterial);
-                    top.position.y = 0.9; // Position above the base
+                    const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+                    topMesh.position.y = 0.9; // Position above the base
+                    arrowGroup.add(topMesh);
+                    
+                    // Create a rotation group for the nose that will rotate
+                    const noseRotationGroup = new THREE.Group();
+                    noseRotationGroup.position.set(0, 0.9, 0);
+                    
+                    // Add an arrow-shaped nose (bigger)
+                    const arrowNose = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.15, 0.5, 8),
+                        topMaterial
+                    );
+                    
+                    // Position the arrow nose inside the rotation group
+                    // The cone points along its Y axis by default
+                    arrowNose.position.set(0, 0.2, 0);
+                    arrowNose.rotation.x = -Math.PI/2; // Make it point forward (z-axis)
+                    
+                    // Add to rotation group
+                    noseRotationGroup.add(arrowNose);
+                    
+                    // Add rotation group to main group and set it as the nose for rotation
+                    arrowGroup.add(noseRotationGroup);
+                    arrowGroup.userData.nose = noseRotationGroup;
+                    
+                    top = arrowGroup;
                     break;
                     
                 case 'doubleArrow':
                     // Double-pointed top for double arrow tower
                     const doubleTopGroup = new THREE.Group();
                     
+                    // Base cone structures
                     const cone1 = new THREE.Mesh(
                         new THREE.ConeGeometry(0.25, 0.5, 8),
                         topMaterial
@@ -1390,6 +1419,38 @@ export class Renderer {
                     cone2.rotation.z = -Math.PI/10;
                     
                     doubleTopGroup.add(cone1, cone2);
+                    
+                    // Create a rotation group for the nose that will rotate
+                    const doubleArrowRotationGroup = new THREE.Group();
+                    doubleArrowRotationGroup.position.set(0, 0.7, 0);
+                    
+                    // Create the double arrow nose inside the rotation group
+                    const doubleArrowNoseGroup = new THREE.Group();
+                    
+                    // Create two bigger arrows side by side
+                    const noseArrow1 = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.12, 0.4, 8),
+                        topMaterial
+                    );
+                    noseArrow1.position.set(0.12, 0.15, 0);
+                    noseArrow1.rotation.x = -Math.PI/2; // Point forward
+                    
+                    const noseArrow2 = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.12, 0.4, 8),
+                        topMaterial
+                    );
+                    noseArrow2.position.set(-0.12, 0.15, 0);
+                    noseArrow2.rotation.x = -Math.PI/2; // Point forward
+                    
+                    doubleArrowNoseGroup.add(noseArrow1, noseArrow2);
+                    
+                    // Add the double arrow group to the rotation group
+                    doubleArrowRotationGroup.add(doubleArrowNoseGroup);
+                    
+                    // Add rotation group to main group and set it as the nose for rotation
+                    doubleTopGroup.add(doubleArrowRotationGroup);
+                    doubleTopGroup.userData.nose = doubleArrowRotationGroup;
+                    
                     top = doubleTopGroup;
                     break;
                     
@@ -1403,6 +1464,11 @@ export class Renderer {
                     );
                     sphere.position.y = 0.9;
                     
+                    // Create a rotation group for the nose (barrel) that will rotate
+                    const cannonRotationGroup = new THREE.Group();
+                    cannonRotationGroup.position.set(0, 0.9, 0);
+                    
+                    // Create barrel which will serve as the rotatable nose
                     const barrel = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
                         new THREE.MeshStandardMaterial({ 
@@ -1411,10 +1477,22 @@ export class Renderer {
                             metalness: 0.9
                         })
                     );
-                    barrel.position.set(0, 0.7, 0.4);
-                    barrel.rotation.x = Math.PI/2;
                     
-                    cannonGroup.add(sphere, barrel);
+                    // Position and orient barrel inside the rotation group
+                    // The cylinder points along its Y axis by default
+                    barrel.position.set(0, 0, 0.3); // Move forward a bit
+                    barrel.rotation.x = Math.PI/2; // Make it point forward (z-axis)
+                    
+                    // Add barrel to rotation group
+                    cannonRotationGroup.add(barrel);
+                    
+                    // Add sphere and cannonRotationGroup to main group
+                    cannonGroup.add(sphere);
+                    cannonGroup.add(cannonRotationGroup);
+                    
+                    // Store rotation group reference to enable rotation
+                    cannonGroup.userData.nose = cannonRotationGroup;
+                    
                     top = cannonGroup;
                     break;
                     
@@ -1443,6 +1521,13 @@ export class Renderer {
         }
         
         towerGroup.add(top);
+        
+        // IMPORTANT: Transfer nose reference from top group to towerGroup
+        // This is critical for rotation to work
+        if (top.userData && top.userData.nose) {
+            towerGroup.userData.nose = top.userData.nose;
+            console.log(`Transferred nose reference from ${tower.type} top to towerGroup`);
+        }
         
         // Add a glow effect only to special towers
         if (isSpecialTower) {
@@ -1516,6 +1601,14 @@ export class Renderer {
 
         towerGroup.add(rangeIndicator);
         towerGroup.userData.rangeIndicator = rangeIndicator;
+        
+        // Debug to check if the nose reference is properly set
+        if (towerGroup.userData.nose) {
+            console.log(`Tower ${tower.type} has nose set in userData`);
+        } else {
+            // This is a critical issue - the nose reference is missing
+            console.warn(`Tower ${tower.type} is missing nose in userData`);
+        }
 
         this.scene.add(towerGroup);
         return towerGroup;

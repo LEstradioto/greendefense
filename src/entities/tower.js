@@ -184,6 +184,15 @@ export class Tower {
         if (this.mesh.userData.rangeIndicator) {
             this.mesh.userData.rangeIndicator.visible = this.game.debugMode;
         }
+        
+        // Always update nose rotation if an enemy is in range, regardless of fire state
+        if (this.mesh && this.mesh.userData.nose) {
+            // Find the closest enemy in range
+            const target = this.game.findClosestEnemyInRange(this.position, this.range);
+            if (target) {
+                this.rotateTowardTarget(target);
+            }
+        }
     }
     
     updateEffects(deltaTime) {
@@ -241,6 +250,9 @@ export class Tower {
         // Record fire time
         this.lastFireTime = performance.now();
 
+        // Rotate tower nose toward the target
+        this.rotateTowardTarget(target);
+
         // Create projectile
         this.createProjectile(target);
 
@@ -256,6 +268,54 @@ export class Tower {
         
         // Apply element-specific effects
         this.applyElementalSpecialEffects(target);
+    }
+    
+    rotateTowardTarget(target) {
+        // Check if this tower has a nose component to rotate
+        if (this.mesh && this.mesh.userData.nose) {
+            const nose = this.mesh.userData.nose;
+            
+            // Remove all debug logs once working
+            //console.log(`Tower type: ${this.type}, rotating nose`);
+            
+            // Calculate angle to target
+            const dx = target.position.x - this.position.x;
+            const dz = target.position.z - this.position.z;
+            
+            // Use correct angle calculation for Three.js coordinate system
+            const targetAngle = Math.atan2(dx, dz);
+            
+            // Apply rotation directly (simple approach)
+            nose.rotation.y = targetAngle;
+            
+            // Store the target on the tower for debugging
+            this.lastTarget = target;
+        } else {
+            console.warn(`Tower rotation failed - no nose for ${this.type} tower`);
+            
+            // Debug structure of mesh to locate nose
+            if (this.mesh) {
+                console.log(`Tower mesh structure:`, JSON.stringify({
+                    type: this.type,
+                    hasUserData: !!this.mesh.userData,
+                    userDataKeys: Object.keys(this.mesh.userData || {})
+                }));
+                
+                // Traverse mesh looking for nose
+                let foundNose = false;
+                this.mesh.traverse(obj => {
+                    if (obj.userData && obj.userData.nose) {
+                        foundNose = true;
+                        console.log(`Found nose in child object. Using it for rotation.`);
+                        this.mesh.userData.nose = obj.userData.nose;
+                    }
+                });
+                
+                if (!foundNose) {
+                    console.error(`No nose found in tower mesh hierarchy`);
+                }
+            }
+        }
     }
     
     applyElementalSpecialEffects(target) {
