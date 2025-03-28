@@ -21,6 +21,244 @@ document.addEventListener('DOMContentLoaded', () => {
     window.ui = new UI(window.game);
     window.game.ui = window.ui;
     
+    // Set up audio system with music and sound effects
+    const setupAudio = () => {
+        // Music tracks
+        const musicTracks = [
+            "https://cdn.pixabay.com/download/audio/2023/07/30/audio_e0908e8569.mp3", // Good Night Lofi by FASSounds
+            "https://cdn.pixabay.com/download/audio/2022/11/22/audio_febc508520.mp3", // Lofi Chill by Music Unlimited
+            "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"  // Lofi Study by FASSounds
+        ];
+        
+        // We're using URL-based sounds instead of base64
+        
+        // Elements
+        const musicButton = document.getElementById('music-toggle');
+        const musicIcon = document.getElementById('music-icon');
+        const backgroundMusic = document.getElementById('background-music');
+        
+        // Randomize tracks completely
+        // Shuffle the tracks array to get a truly random order
+        const shuffleTracks = (tracks) => {
+            for (let i = tracks.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+            }
+            return tracks;
+        };
+        
+        // Shuffle the tracks once at start
+        const shuffledTracks = shuffleTracks([...musicTracks]);
+        let currentTrackIndex = 0; // Start with first track in shuffled list
+        
+        // Play a track from the shuffled list
+        const playRandomTrack = () => {
+            backgroundMusic.src = shuffledTracks[currentTrackIndex];
+            backgroundMusic.volume = 0.2; // Lower volume from 0.4 to 0.2
+            backgroundMusic.load();
+            backgroundMusic.play().catch(err => console.log('Could not autoplay music'));
+            
+            // Show track name
+            const trackName = shuffledTracks[currentTrackIndex].split('/').pop().split('.')[0];
+            showTrackInfo(trackName);
+        };
+        
+        // Track info display
+        const showTrackInfo = (trackName) => {
+            // Check if we already have the info element
+            let trackInfo = document.getElementById('track-info');
+            if (!trackInfo) {
+                // Create track info display
+                trackInfo = document.createElement('div');
+                trackInfo.id = 'track-info';
+                trackInfo.style.position = 'fixed';
+                trackInfo.style.bottom = '48px';
+                trackInfo.style.left = '8px';
+                trackInfo.style.backgroundColor = 'rgba(0,0,0,0.6)';
+                trackInfo.style.color = '#fff';
+                trackInfo.style.padding = '4px 8px';
+                trackInfo.style.borderRadius = '4px';
+                trackInfo.style.fontSize = '12px';
+                trackInfo.style.opacity = '0';
+                trackInfo.style.transition = 'opacity 0.5s';
+                trackInfo.style.zIndex = '9999';
+                document.body.appendChild(trackInfo);
+            }
+            
+            // Set content and show
+            trackInfo.textContent = `▶ ${trackName.replace(/_/g, ' ')}`;
+            trackInfo.style.opacity = '1';
+            
+            // Hide after 3 seconds
+            setTimeout(() => {
+                trackInfo.style.opacity = '0';
+            }, 3000);
+        };
+        
+        // When current track ends, play the next one
+        backgroundMusic.addEventListener('ended', () => {
+            currentTrackIndex = (currentTrackIndex + 1) % shuffledTracks.length;
+            playRandomTrack();
+        });
+        
+        // Add FX toggle button to the audio-controls div
+        const fxButton = document.createElement('button');
+        fxButton.id = 'fx-toggle';
+        fxButton.innerHTML = 'FX';
+        fxButton.className = 'music-button'; // Use the same class to get the base styling
+         
+        // Only override the position to place it next to the music button
+        // This way it inherits all the styling from the CSS class including
+        // the green border, glow effect and animations
+        fxButton.style.left = '76px';
+        fxButton.style.bottom = '8px';
+        fxButton.style.top = 'auto';
+        
+        fxButton.title = "Sound Effects: On";
+        document.getElementById('audio-controls').appendChild(fxButton);
+        
+        // FX toggle state
+        window.soundFxEnabled = true;
+        
+        fxButton.addEventListener('click', () => {
+            window.soundFxEnabled = !window.soundFxEnabled;
+            
+            if (window.soundFxEnabled) {
+                fxButton.title = "Sound Effects: On";
+                fxButton.classList.remove('muted');
+            } else {
+                fxButton.title = "Sound Effects: Off";
+                fxButton.classList.add('muted');
+            }
+        });
+        
+        // Local sound file paths
+        const soundUrls = {
+            'towerShoot': [
+                "./bowShot.mp3" // Local bow shot sound
+            ],
+            'enemyHit': [
+                "./enemyHit.wav", // Local hit sound
+                "./enemyHit2.wav" // Alternative hit sound
+            ],
+            'loseLife': [
+                "./loseHit1.mp3", // Local lose life sound
+                "./loseHit2.mp3" // Alternative lose life sound
+            ]
+        };
+        
+        // Pre-load and cache sound effects
+        const soundCache = {};
+        
+        // Load each sound effect once
+        Object.keys(soundUrls).forEach(type => {
+            soundUrls[type].forEach((url, index) => {
+                const cacheKey = `${type}_${index}`;
+                soundCache[cacheKey] = new Audio(url);
+                
+                // Set normalized volume based on sound type (lower overall)
+                if (type === 'loseLife') {
+                    soundCache[cacheKey].volume = 0.5; // Moderate volume for lose life
+                } else if (type === 'enemyHit') {
+                    soundCache[cacheKey].volume = 0.4; // Lower for enemy hit to avoid overwhelming
+                } else {
+                    soundCache[cacheKey].volume = 0.35; // Even lower for frequent sounds
+                }
+                
+                // Preload the sound
+                soundCache[cacheKey].load();
+            });
+        });
+        
+        // Create a simple context for playback rate manipulation (avoid audio fatigue)
+        let audioContext;
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.log("AudioContext not supported in this browser");
+        }
+        
+        // Function to play sound effects with variations to avoid audio fatigue
+        window.playSound = (soundType) => {
+            // Check if sound effects are enabled
+            if (!window.soundFxEnabled) {
+                return;
+            }
+            
+            try {
+                // Check if we have sounds for this type
+                if (!soundUrls[soundType] || !soundUrls[soundType].length) {
+                    return;
+                }
+                
+                // Pick a random sound from the category
+                const urlIndex = Math.floor(Math.random() * soundUrls[soundType].length);
+                
+                // Create a fresh sound to allow independent playback and pitch variation
+                const sound = new Audio(soundUrls[soundType][urlIndex]);
+                
+                // Set base volume depending on sound type
+                if (soundType === 'loseLife') {
+                    sound.volume = 0.5; 
+                } else if (soundType === 'enemyHit') {
+                    sound.volume = 0.4;
+                } else {
+                    sound.volume = 0.35;
+                }
+                
+                // Add subtle variation to avoid audio fatigue
+                // We'll use playbackRate for a simple pitch/speed variation
+                if (soundType === 'towerShoot') {
+                    // More variation for frequently played sounds
+                    sound.playbackRate = 0.9 + (Math.random() * 0.3); // 0.9-1.2 range
+                    
+                    // Add slight volume variation too
+                    sound.volume *= (0.85 + (Math.random() * 0.3)); // 85%-115% of base volume
+                } else {
+                    // Less variation for less frequent sounds
+                    sound.playbackRate = 0.95 + (Math.random() * 0.2); // 0.95-1.15 range
+                }
+                
+                // Play the sound with error handling
+                sound.play().catch(err => {
+                    console.log("Could not play sound effect: " + err.message);
+                });
+            } catch (err) {
+                // Silently fail - sound effects aren't critical
+            }
+        };
+        
+        // Set initial volume and play the first track
+        playRandomTrack();
+        
+        // Set up music toggle button
+        if (musicButton) {
+            musicButton.addEventListener('click', () => {
+                if (backgroundMusic.paused) {
+                    backgroundMusic.play();
+                    musicIcon.className = 'fas fa-volume-up';
+                    musicButton.classList.remove('muted');
+                } else {
+                    backgroundMusic.pause();
+                    musicIcon.className = 'fas fa-volume-mute';
+                    musicButton.classList.add('muted');
+                }
+            });
+        }
+        
+        // Add event listener to document that tries to play music on first interaction
+        document.body.addEventListener('click', () => {
+            if (backgroundMusic.paused) {
+                backgroundMusic.play().catch(err => 
+                    console.log('Still cannot play audio after click')
+                );
+            }
+        }, { once: true });
+    };
+    
+    // Initialize audio controls
+    setupAudio();
+    
     // Hide debug elements unless running locally
     hideDebugElementsUnlessLocal();
     

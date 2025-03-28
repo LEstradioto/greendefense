@@ -705,6 +705,11 @@ export class Game {
                     
                     // Create life flash effect
                     this.createLifeFlashEffect();
+                    
+                    // Play lose life sound effect
+                    if (window.playSound) {
+                        window.playSound('loseLife');
+                    }
                 }
 
                 // Find the wave info for this enemy
@@ -1921,18 +1926,17 @@ export class Game {
             message = `Wave ${waveNumber} Complete! +${amount} Gold`;
         }
         
-        // Create a text canvas with more width to avoid text cutting
+        // Create a text canvas with significantly more width to avoid text cutting at any resolution
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        canvas.width = 1024; // Doubled width to prevent text from being cut off
+        canvas.width = 2048; // Much wider canvas to ensure text fits completely
         canvas.height = 256;  // Increased height for better positioning
         
-        // Clear canvas
-        context.fillStyle = 'rgba(0, 0, 0, 0)';
-        context.fillRect(0, 0, canvas.width, canvas.height);
+        // Ensure canvas is completely transparent (no background)
+        context.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Draw message
-        context.font = 'Bold 48px Arial';
+        // Draw message with enhanced styling
+        context.font = 'Bold 56px Arial, sans-serif'; // Larger font
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         
@@ -1940,27 +1944,36 @@ export class Game {
         const textWidth = context.measureText(message).width;
         console.log("Wave message width:", textWidth, "Canvas width:", canvas.width);
         
-        // Add glow effect
+        // Enhanced glow effect
         context.shadowColor = '#FFD700';
-        context.shadowBlur = 20;
+        context.shadowBlur = 25;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
         
-        // Draw gold text
-        context.fillStyle = '#FFD700';
+        // Draw gold text (slightly brighter gold)
+        context.fillStyle = '#FFDF00';
         context.fillText(message, canvas.width / 2, canvas.height / 2);
         
-        // Create texture and sprite
+        // Add a second layer with slight offset for stronger effect
+        context.shadowBlur = 15;
+        context.fillStyle = '#FFF6A0';
+        context.fillText(message, canvas.width / 2, canvas.height / 2);
+        
+        // Create texture and sprite with improved transparency
         const texture = new THREE.Texture(canvas);
         texture.needsUpdate = true;
         
         const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
-            transparent: true
+            transparent: true,
+            depthTest: false, // Ensure text renders on top
+            depthWrite: false // Prevent z-fighting
         });
         
         const sprite = new THREE.Sprite(spriteMaterial);
-        // Position in center of map
-        sprite.position.set(0, 5, 0); 
-        sprite.scale.set(15, 3.75, 1); // Increased scale to match bigger canvas
+        // Position in center of map, slightly higher
+        sprite.position.set(0, 6, 0); 
+        sprite.scale.set(20, 5, 1); // Increased scale to match bigger canvas and ensure text is fully visible
         
         this.renderer.scene.add(sprite);
         

@@ -6,8 +6,6 @@
     <title>GREEN Tower Defense</title>
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <!-- Magenta.js dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/@magenta/music@^1.0.0"></script>
     <style>
         body { margin: 0; }
     </style>
@@ -147,9 +145,12 @@
             </div>
         </div>
         <canvas id="game-canvas"></canvas>
-        <button id="music-toggle" class="music-button">
-            <i class="fas fa-volume-up" id="music-icon"></i>
-        </button>
+        <div id="audio-controls">
+            <audio id="background-music" loop></audio>
+            <button id="music-toggle" class="music-button" style="position: fixed !important; bottom: 8px !important; left: 8px !important; top: auto !important;">
+                <i class="fas fa-volume-up" id="music-icon"></i>
+            </button>
+        </div>
         <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
     </div>
 

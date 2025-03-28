@@ -376,6 +376,11 @@ export class Enemy {
         // Create hit effect if not from a DOT effect (to avoid visual spam)
         if (!isFromEffect) {
             this.createHitEffect(actualDamage);
+            
+            // Play enemy hit sound effect
+            if (window.playSound) {
+                window.playSound('enemyHit');
+            }
         }
     }
     

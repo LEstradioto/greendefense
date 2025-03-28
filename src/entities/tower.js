@@ -256,12 +256,21 @@ export class Tower {
         // Create projectile
         this.createProjectile(target);
 
+        // Play tower shoot sound effect if available
+        if (window.playSound) {
+            window.playSound('towerShoot');
+        }
+
         // Apply special abilities
         if (this.specialAbility === 'doubleShot' && Math.random() < 0.3) {
             // 30% chance of firing second shot
             setTimeout(() => {
                 if (target.health > 0 && !target.reachedEnd) {
                     this.createProjectile(target);
+                    // Play sound for second shot too
+                    if (window.playSound) {
+                        window.playSound('towerShoot');
+                    }
                 }
             }, 150); // Small delay between shots
         }
