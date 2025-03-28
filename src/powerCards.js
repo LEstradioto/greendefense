@@ -90,9 +90,13 @@ export class PowerCards {
         }, 1000); // Delay damage until meteor impacts
     }
     
+    /**
+     * Create a shield effect around a tower
+     * This is used by Stone Shield card ability
+     */
     createShieldEffect(position) {
         // Create shield visual effect
-        const THREE = this.game.renderer.THREE;
+        const THREE = window.THREE;
         const radius = 0.6;
         const geometry = new THREE.SphereGeometry(radius, 16, 16);
         const material = new THREE.MeshBasicMaterial({

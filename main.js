@@ -9,7 +9,7 @@ window.OrbitControls = OrbitControls;
 import { Game } from './src/game.js';
 import { UI } from './src/ui.js';
 
-console.log('Three.js version:', THREE.REVISION);
+// Three.js version info removed for production
 
 // Initialize the game when the document is loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,23 +19,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Create UI and store it in the game
     window.ui = new UI(window.game);
     window.game.ui = window.ui;
+    
+    // Hide debug elements unless running locally
+    hideDebugElementsUnlessLocal();
+    
+    // Setup high scores functionality
+    setupHighScoresSystem();
 
     // Setup the start button event listener
     document.getElementById('start-button').addEventListener('click', async () => {
         const username = document.getElementById('username').value || 'Player';
         await window.game.start(username);
 
-        // Try multiple approaches to hide the overlay
+        // Hide the overlay
         const overlay = document.getElementById('game-overlay');
-        console.log('Hiding overlay, current classes:', overlay.className);
-
+        
         // Method 1: Add hidden class
         overlay.classList.add('hidden');
 
         // Method 2: Set style directly
         overlay.style.display = 'none';
-
-        console.log('After hiding, classes:', overlay.className);
     });
 
     // We'll handle the restart button in the Game class
@@ -66,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.game && window.game.gameStarted) {
             // Check if this key is already down
             if (keyStates[event.key] === true) {
-                console.log("Key already down, ignoring repeat");
                 return;
             }
             
@@ -76,13 +78,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if it's a tower selection key
             if (keyToTowerMap[event.key]) {
                 const towerType = keyToTowerMap[event.key];
-                console.log(`Key ${event.key} pressed - ${towerType} tower`);
                 window.ui.selectTower(towerType);
             }
             // Other key handlers
             else switch(event.key) {
                 case 'Escape':
-                    console.log("Escape key pressed - canceling tower placement");
                     window.ui.cancelTowerPlacement();
                     break;
                 case 'd':
@@ -208,6 +208,262 @@ document.addEventListener('DOMContentLoaded', () => {
     function getBrightness() {
         return document.getElementById('grid-brightness').value / 100;
     }
+    
+    // Function to hide debug elements unless in development mode
+    function hideDebugElementsUnlessLocal() {
+        // First check for development header from our server
+        const checkDevMode = async () => {
+            try {
+                const response = await fetch(window.location.origin, {
+                    method: 'HEAD'
+                });
+                return response.headers.get('X-Development-Mode') === 'true';
+            } catch (err) {
+                console.error('Error checking development mode:', err);
+                return false;
+            }
+        };
+        
+        // Local dev environment detection (Vite dev server or file://)
+        const isLocalDev = window.location.hostname === 'localhost' && window.location.port === '5173' || 
+                         window.location.protocol === 'file:';
+        
+        // Check both methods
+        if (isLocalDev) {
+            console.log('Debug controls available - local development detected');
+            return; // Keep debug controls visible
+        }
+        
+        // Check header for server-controlled setting
+        checkDevMode().then(isDev => {
+            if (!isDev) {
+                // Hide debug buttons
+                const debugControls = document.getElementById('debug-controls');
+                if (debugControls) {
+                    debugControls.style.display = 'none';
+                }
+                
+                // Hide debug panel
+                const debugPanel = document.getElementById('debug-panel');
+                if (debugPanel) {
+                    debugPanel.style.display = 'none';
+                }
+                
+            }
+        });
+        
+        // Hide by default until we confirm dev mode
+        const debugControls = document.getElementById('debug-controls');
+        if (debugControls) {
+            debugControls.style.display = 'none';
+        }
+        
+        const debugPanel = document.getElementById('debug-panel');
+        if (debugPanel) {
+            debugPanel.style.display = 'none';
+        }
+    }
+    
+    // Function to setup high scores system
+    function setupHighScoresSystem() {
+        // Setup high scores button
+        document.getElementById('show-rankings-button').addEventListener('click', () => {
+            // Show high scores screen
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('high-scores-screen').classList.remove('hidden');
+            
+            // Populate high scores
+            displayHighScores();
+        });
+        
+        // Setup back button from high scores
+        document.getElementById('back-to-start-button').addEventListener('click', () => {
+            // Return to start screen
+            document.getElementById('high-scores-screen').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        });
+        
+        // Create side rankings display for desktop
+        createSideRankingsDisplay();
+    }
+    
+    // Function to create side rankings display for desktop
+    function createSideRankingsDisplay() {
+        // Create the rankings display container
+        const rankingsDisplay = document.createElement('div');
+        rankingsDisplay.id = 'rankings-display';
+        
+        // Add title
+        const rankingsTitle = document.createElement('h3');
+        rankingsTitle.textContent = 'Top Players';
+        rankingsDisplay.appendChild(rankingsTitle);
+        
+        // Add placeholder for rankings
+        const rankingsList = document.createElement('div');
+        rankingsList.id = 'rankings-list';
+        rankingsDisplay.appendChild(rankingsList);
+        
+        // Add to the game container
+        document.getElementById('game-container').appendChild(rankingsDisplay);
+        
+        // Populate with top scores (simplified version)
+        updateSideRankings();
+    }
+    
+    // Function to update side rankings display
+    function updateSideRankings() {
+        const rankingsList = document.getElementById('rankings-list');
+        if (!rankingsList) return;
+        
+        // Show loading message
+        rankingsList.innerHTML = 'Loading...';
+        
+        // Try to get scores from the server first
+        fetch('/api/scores?limit=5')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(serverScores => {
+                if (serverScores && serverScores.length > 0) {
+                    // Render server scores
+                    renderSideRankings(rankingsList, serverScores);
+                } else {
+                    // Fallback to localStorage
+                    const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                    renderSideRankings(rankingsList, localScores.slice(0, 5));
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching server scores:", error);
+                
+                // Fallback to localStorage
+                const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                renderSideRankings(rankingsList, localScores.slice(0, 5));
+            });
+    }
+    
+    // Function to render side rankings
+    function renderSideRankings(container, scores) {
+        container.innerHTML = '';
+        
+        if (scores.length === 0) {
+            const noScores = document.createElement('div');
+            noScores.className = 'ranking-entry';
+            noScores.textContent = 'No scores yet';
+            container.appendChild(noScores);
+            return;
+        }
+        
+        // Add scores (simplified display)
+        scores.forEach((score, index) => {
+            const entry = document.createElement('div');
+            entry.className = 'ranking-entry';
+            
+            // Only show rank, name and score
+            entry.textContent = `${index + 1}. ${score.username}: ${score.score}`;
+            
+            container.appendChild(entry);
+        });
+    }
+    
+    // Function to display high scores
+    function displayHighScores() {
+        try {
+            const highScoresList = document.getElementById('high-scores-list');
+            highScoresList.innerHTML = ''; // Clear existing scores
+            
+            // Show loading message
+            const loadingMessage = document.createElement('div');
+            loadingMessage.className = 'score-entry';
+            loadingMessage.textContent = 'Loading scores...';
+            highScoresList.appendChild(loadingMessage);
+            
+            // Try to get scores from the server first
+            fetch('/api/scores?limit=50')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(serverScores => {
+                    // Clear loading message
+                    highScoresList.innerHTML = '';
+                    
+                    if (serverScores && serverScores.length > 0) {
+                        // Render server scores
+                        renderScoresList(highScoresList, serverScores, "Server Rankings");
+                    } else {
+                        // Fallback to localStorage
+                        const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                        renderScoresList(highScoresList, localScores, "Local Rankings");
+                    }
+                })
+                .catch(error => {
+                    console.error("Error fetching server scores:", error);
+                    
+                    // Clear loading message
+                    highScoresList.innerHTML = '';
+                    
+                    // Fallback to localStorage
+                    const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                    renderScoresList(highScoresList, localScores, "Local Rankings (Server Unavailable)");
+                });
+        } catch (err) {
+            console.error("Error displaying high scores:", err);
+            
+            // Show error message
+            const highScoresList = document.getElementById('high-scores-list');
+            highScoresList.innerHTML = 'Error loading high scores.';
+        }
+    }
+    
+    // Helper function to render scores list
+    function renderScoresList(container, scores, title) {
+        // Add title
+        const titleHeader = document.createElement('h2');
+        titleHeader.textContent = title;
+        titleHeader.style.fontSize = '1.5rem';
+        titleHeader.style.marginBottom = '15px';
+        container.appendChild(titleHeader);
+        
+        if (scores.length === 0) {
+            // No scores yet
+            const noScores = document.createElement('div');
+            noScores.className = 'score-entry';
+            noScores.textContent = 'No high scores yet. Play a game to be the first!';
+            container.appendChild(noScores);
+            return;
+        }
+        
+        // Add title row
+        const titleRow = document.createElement('div');
+        titleRow.className = 'score-entry title';
+        titleRow.innerHTML = '<strong>Rank. Player - Score (Result - Time)</strong>';
+        container.appendChild(titleRow);
+        
+        // Add scores
+        scores.forEach((score, index) => {
+            const entry = document.createElement('div');
+            entry.className = 'score-entry';
+            
+            // Format date and time
+            const scoreDate = new Date(score.date || score.datetime);
+            const dateString = scoreDate.toLocaleDateString();
+            const timeString = scoreDate.toLocaleTimeString();
+            
+            // Format duration if available
+            const durationInfo = score.duration ? 
+                ` - ${Math.floor(score.duration/60)}m ${score.duration%60}s` : '';
+            
+            entry.textContent = `${index + 1}. ${score.username} - ${score.score} (${score.victory ? 'Victory' : 'Wave ' + score.wave}${durationInfo}) - ${dateString} ${timeString}`;
+            
+            container.appendChild(entry);
+        });
+    }
 
     // Initialize tower selection UI - make selection consistent with keyboard shortcuts
     document.querySelectorAll('.tower-option').forEach(element => {
@@ -217,8 +473,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Call selectTower method to handle the toggle behavior
             window.ui.selectTower(towerType);
             
-            // Log for debugging
-            console.log(`Tower option clicked - ${towerType} tower`);
         });
     });
 
@@ -244,5 +498,4 @@ document.addEventListener('DOMContentLoaded', () => {
         window.ui.handleCanvasClick(normalizedX, normalizedY);
     });
 
-    console.log('Game initialization complete');
 });

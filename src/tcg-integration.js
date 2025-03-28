@@ -338,19 +338,16 @@ export class TCGIntegration {
         // Prioritize tower cards (70% chance)
         let card;
         const rand = Math.random();
-        if (rand < 0.7) {
-            // Draw tower card
+        if (rand < 0.8) {
+            // Draw tower card (increased chance to 80%)
             const towerCards = allCards.towers;
             card = towerCards[Math.floor(Math.random() * towerCards.length)];
-        } else if (rand < 0.9) {
+        } else {
             // Draw spell card (20% chance)
             const spellCards = allCards.spells;
             card = spellCards[Math.floor(Math.random() * spellCards.length)];
-        } else {
-            // Draw enemy card (10% chance - only useful in multiplayer)
-            const enemyCards = allCards.enemies;
-            card = enemyCards[Math.floor(Math.random() * enemyCards.length)];
         }
+        // Enemy cards removed since they're not useful yet
         
         if (card) {
             this.hand.push(card);
@@ -888,14 +885,16 @@ export class TCGIntegration {
     
     castShieldSpell(spellStats) {
         // Apply shield effect to towers
-        const duration = spellStats.duration;
+        const duration = spellStats.duration || 10; // Default 10 seconds if not specified
         const damageReduction = 0.5; // 50% damage reduction
         
         // Apply shield effect to all towers
         let affectedCount = 0;
         
         for (const tower of this.game.towers) {
+            // Apply the effect to the tower
             tower.applyEffect('shield', damageReduction, duration);
+            console.log(`Applied shield effect to tower at (${tower.position.x}, ${tower.position.z}) for ${duration} seconds`);
             
             // Visual effect on tower
             if (tower.mesh) {
@@ -904,8 +903,15 @@ export class TCGIntegration {
                     y: tower.position.y + 0.5,
                     z: tower.position.z
                 };
-                const effect = this.game.powerCards.createShieldEffect(effectPosition);
-                this.game.powerCards.activeEffects.push(effect);
+                
+                try {
+                    const effect = this.game.powerCards.createShieldEffect(effectPosition);
+                    if (effect) {
+                        this.game.powerCards.activeEffects.push(effect);
+                    }
+                } catch (err) {
+                    console.error("Error creating shield effect:", err);
+                }
             }
             affectedCount++;
         }
@@ -916,14 +922,16 @@ export class TCGIntegration {
     
     castHasteSpell(spellStats) {
         // Apply haste effect to towers (increased attack speed)
-        const duration = spellStats.duration;
+        const duration = spellStats.duration || 10; // Default 10 seconds if not specified
         const speedMultiplier = 1.5; // 50% faster attacks
         
         // Apply effect to all towers
         let affectedCount = 0;
         
         for (const tower of this.game.towers) {
+            // Apply the effect to the tower
             tower.applyEffect('haste', speedMultiplier, duration);
+            console.log(`Applied haste effect to tower at (${tower.position.x}, ${tower.position.z}) for ${duration} seconds`);
             
             // Visual effect
             if (tower.mesh) {
@@ -932,8 +940,58 @@ export class TCGIntegration {
                     y: tower.position.y + 0.5,
                     z: tower.position.z
                 };
-                const effect = this.game.powerCards.createWindEffect(effectPosition);
-                this.game.powerCards.activeEffects.push(effect);
+                
+                try {
+                    // Create wind effect (Air/Wind effect)
+                    // Directly create the effect since createWindEffect might not exist
+                    const particleCount = 20;
+                    const particles = [];
+                    
+                    // Create particles manually
+                    for (let i = 0; i < particleCount; i++) {
+                        const particle = document.createElement('div');
+                        particle.className = 'wind-particle';
+                        particle.style.width = '5px';
+                        particle.style.height = '5px';
+                        particle.style.backgroundColor = 'rgba(255, 255, 255, 0.7)';
+                        particle.style.position = 'absolute';
+                        particle.style.borderRadius = '50%';
+                        document.body.appendChild(particle);
+                        particles.push(particle);
+                    }
+                    
+                    // Add visual animation for wind effect
+                    // This is a basic effect that can be enhanced
+                    const startTime = performance.now();
+                    const duration = 2000; // 2 seconds for animation
+                    
+                    const animateParticles = () => {
+                        const elapsed = performance.now() - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        
+                        if (progress < 1) {
+                            particles.forEach(particle => {
+                                // Animate particle movement
+                                // This is just a simple animation
+                                const angle = Math.random() * Math.PI * 2;
+                                const distance = Math.random() * 50;
+                                particle.style.left = `calc(50% + ${Math.cos(angle) * distance}px)`;
+                                particle.style.top = `calc(50% + ${Math.sin(angle) * distance}px)`;
+                            });
+                            
+                            requestAnimationFrame(animateParticles);
+                        } else {
+                            // Remove particles when animation completes
+                            particles.forEach(particle => {
+                                document.body.removeChild(particle);
+                            });
+                        }
+                    };
+                    
+                    requestAnimationFrame(animateParticles);
+                } catch (err) {
+                    console.error("Error creating wind effect:", err);
+                }
             }
             affectedCount++;
         }
@@ -944,34 +1002,75 @@ export class TCGIntegration {
     
     castDrainSpell(spellStats) {
         // Apply drain effect to enemies (weakens them) and restore mana
-        const duration = spellStats.duration;
+        const duration = spellStats.duration || 10; // Default 10 seconds if not specified
         const weakenAmount = 0.5; // 50% increased damage taken
         const manaRestored = Math.min(3, this.absoluteMaxMana - this.mana); // Restore up to 3 mana
         
         // Apply weaken effect to all enemies
         let affectedCount = 0;
         for (const enemy of this.game.enemies) {
-            enemy.applyStatusEffect('weaken', {
-                duration: duration,
-                damageModifier: 1.0 + weakenAmount // Take 50% more damage
-            });
-            
-            // Create visual effect on each enemy
-            const effectPosition = {
-                x: enemy.position.x,
-                y: enemy.position.y + 0.5,
-                z: enemy.position.z
-            };
-            const effect = this.game.powerCards.createDrainEffect(effectPosition);
-            this.game.powerCards.activeEffects.push(effect);
-            
-            affectedCount++;
+            // Apply weaken status effect to the enemy
+            try {
+                // Use simpler form to apply weaken effect
+            if (typeof enemy.applyStatusEffect === 'function') {
+                enemy.applyStatusEffect('weaken', {
+                    duration: duration,
+                    damageModifier: 1.0 + weakenAmount // Take 50% more damage
+                });
+            } else if (enemy.health) {
+                // Direct damage if no status effect system
+                // Take 10% of current health as immediate damage
+                const drainDamage = Math.max(1, Math.floor(enemy.health * 0.1)); 
+                enemy.takeDamage(drainDamage);
+                console.log(`Direct drain damage applied: ${drainDamage} to enemy with ${enemy.health} health`);
+            }
+                
+                console.log(`Applied weaken effect to enemy at (${enemy.position.x}, ${enemy.position.z}) for ${duration} seconds`);
+                
+                // Create visual effect on each enemy
+                const effectPosition = {
+                    x: enemy.position.x,
+                    y: enemy.position.y + 0.5,
+                    z: enemy.position.z
+                };
+                
+                // Create a simple visual effect if the createDrainEffect function doesn't exist
+                if (this.game.powerCards.createDrainEffect) {
+                    const effect = this.game.powerCards.createDrainEffect(effectPosition);
+                    if (effect) {
+                        this.game.powerCards.activeEffects.push(effect);
+                    }
+                } else {
+                    // Create a simple visual effect using DOM elements
+                    const particle = document.createElement('div');
+                    particle.className = 'drain-particle';
+                    particle.style.width = '10px';
+                    particle.style.height = '10px';
+                    particle.style.backgroundColor = 'rgba(128, 0, 128, 0.7)'; // Purple for void/shadow
+                    particle.style.position = 'absolute';
+                    particle.style.borderRadius = '50%';
+                    particle.style.left = '50%';
+                    particle.style.top = '50%';
+                    document.body.appendChild(particle);
+                    
+                    // Animate and remove after animation completes
+                    setTimeout(() => {
+                        document.body.removeChild(particle);
+                    }, 2000);
+                }
+                
+                affectedCount++;
+            } catch (err) {
+                console.error("Error applying weaken effect:", err);
+            }
         }
         
         // Restore mana if enemies were affected
         if (affectedCount > 0) {
             this.mana = Math.min(this.absoluteMaxMana, this.mana + manaRestored);
             this.updateManaDisplay();
+            console.log(`Restored ${manaRestored} mana from Void Drain`);
+            
             
             // Show mana gain UI effect
             const manaGainMessage = document.createElement('div');
@@ -1006,14 +1105,25 @@ export class TCGIntegration {
         // Refresh mana (up to max)
         this.mana = this.maxMana;
         
-        // Draw a card
-        this.drawCard();
+        // Refill hand to maintain 5 cards
+        this.refillHand();
         
         // Update UI
         this.updateCardUI();
         
         // Reset mana regeneration timer
         this.lastManaRegenTime = performance.now();
+    }
+    
+    refillHand() {
+        // Fill hand back up to max (typically 5 cards)
+        const cardsNeeded = this.maxCardsInHand - this.hand.length;
+        
+        for (let i = 0; i < cardsNeeded; i++) {
+            this.drawCard();
+        }
+        
+        console.log(`Refilled hand with ${cardsNeeded} new cards. Hand size: ${this.hand.length}`);
     }
     
     updateMaxManaByWave() {

@@ -24,6 +24,10 @@ export class Game {
             lives: 20,
             score: 0
         };
+        
+        // Game timing tracking for score multiplier
+        this.gameStartTime = 0;
+        this.waveStartTimes = {};
 
         this.currentWave = 1;
         this.maxWaves = 6; // Increased from 3 to 6 waves
@@ -92,6 +96,10 @@ export class Game {
         this.gameStarted = true;
         this.gameOver = false;
         this.lastFrameTime = performance.now();
+        
+        // Record game start time for scoring
+        this.gameStartTime = performance.now();
+        this.waveStartTimes = {};
         
         // Load saved wave settings if available
         this.loadWaveSettings();
@@ -283,14 +291,18 @@ export class Game {
             return;
         }
 
+        // Record wave start time for scoring
+        const now = performance.now();
+        this.waveStartTimes[nextWaveNumber] = now;
+
         // Set up wave tracking info
         const waveInfo = {
             waveNumber: nextWaveNumber,
             enemiesSpawned: 0,
             enemiesAlive: 0,
             enemiesDefeated: 0,
-            startTime: performance.now(),
-            lastSpawnTime: performance.now(),
+            startTime: now,
+            lastSpawnTime: now,
             completed: false
         };
         
@@ -306,12 +318,12 @@ export class Game {
         this.waveInProgress = true;
         this.enemiesSpawned = 0;
         this.enemiesDefeated = 0;
-        this.lastEnemySpawnTime = performance.now();
+        this.lastEnemySpawnTime = now;
 
         // Update UI with current wave/max waves format
         document.getElementById('wave-number').textContent = `${this.currentWave}/${this.maxWaves}`;
         
-        console.log(`Wave ${nextWaveNumber} started${forceSend ? ' (force sent)' : ''}`);
+        console.log(`Wave ${nextWaveNumber} started${forceSend ? ' (force sent)' : ''} at ${new Date(now).toISOString()}`);
         console.log(`Active waves: ${this.activeWaves.length}`);
     }
 
@@ -325,12 +337,28 @@ export class Game {
         
         const enemyCount = this.waveSettings[waveIndex].enemyCount;
         
+        // Add extensive debug logging to track wave completion
+        console.log(`[WAVE DEBUG] Checking completion for wave ${waveNumber}:
+        - Enemies spawned: ${waveInfo.enemiesSpawned}/${enemyCount}
+        - Enemies still alive: ${waveInfo.enemiesAlive}
+        - Enemies defeated: ${waveInfo.enemiesDefeated}
+        - Enemies reached end: ${waveInfo.enemiesSpawned - waveInfo.enemiesAlive - waveInfo.enemiesDefeated}
+        - Wave already completed: ${waveInfo.completed}`);
+        
         // Check if all enemies for this wave have been spawned and defeated/reached end
         if (waveInfo.enemiesSpawned >= enemyCount && waveInfo.enemiesAlive === 0) {
             console.log(`Wave ${waveInfo.waveNumber} complete: ${waveInfo.enemiesDefeated} enemies defeated, ${enemyCount - waveInfo.enemiesDefeated} reached the end`);
             
+            // Record wave completion time for scoring
+            const waveCompletionTime = performance.now();
+            const waveStartTime = this.waveStartTimes[waveNumber] || this.gameStartTime;
+            const waveDuration = waveCompletionTime - waveStartTime;
+            console.log(`Wave ${waveNumber} completed in ${(waveDuration/1000).toFixed(2)} seconds`);
+            
             // Mark wave as completed
             waveInfo.completed = true;
+            waveInfo.completionTime = waveCompletionTime;
+            waveInfo.duration = waveDuration;
             this.wavesCompleted++;
             
             // Call completeWave to give rewards
@@ -338,14 +366,29 @@ export class Game {
             
             // If this completed wave is the current wave and not the last wave,
             // prepare to start the next wave if no waves were force-sent
-            if (waveInfo.waveNumber === this.currentWave && waveInfo.waveNumber < this.maxWaves && this.activeWaves.length <= 1) {
-                // Start next wave after delay, but only if no other waves in progress
-                this.currentWave++;
-                setTimeout(() => {
-                    if (!this.waveInProgress) {
-                        this.startWave();
-                    }
-                }, 5000);
+            if (waveInfo.waveNumber === this.currentWave && waveInfo.waveNumber < this.maxWaves) {
+                console.log(`Preparing to start next wave ${this.currentWave + 1}`);
+                // Start next wave after delay, but only if no other uncompleted waves
+                const nextWave = this.currentWave + 1;
+                this.currentWave = nextWave;
+                
+                // Check if we should auto-start the next wave
+                const shouldAutoStart = this.activeWaves.length <= 1 || 
+                                       this.activeWaves.every(w => w.completed);
+                
+                if (shouldAutoStart) {
+                    console.log(`Auto-starting wave ${nextWave} in 5 seconds`);
+                    setTimeout(() => {
+                        // Double-check we're not already in progress when timeout fires
+                        if (!this.waveInProgress) {
+                            this.startWave();
+                        } else {
+                            console.log("Skipping auto-start, another wave is already in progress");
+                        }
+                    }, 5000);
+                } else {
+                    console.log("Not auto-starting next wave, other waves are still in progress");
+                }
             }
         }
     }
@@ -390,6 +433,33 @@ export class Game {
                 baseWaveBonus = waveNumber * 50;
         }
         
+        // Calculate time-based speed bonus multiplier
+        let timeMultiplier = 1.0;
+        
+        // Calculate wave duration in seconds
+        const now = performance.now();
+        const waveStartTime = this.waveStartTimes[waveNumber] || this.gameStartTime;
+        const waveDuration = (now - waveStartTime) / 1000; // in seconds
+        
+        // Calculate expected time to complete wave based on enemy count and base stats
+        // This is a rough estimation, adjust based on your game balance
+        const enemyCount = this.waveSettings[waveIndex].enemyCount;
+        const expectedSeconds = 45 + (enemyCount * 1.5); // Base time + time per enemy
+        
+        if (waveDuration < expectedSeconds * 0.7) {
+            // Very fast completion (30% faster than expected) - 50% bonus
+            timeMultiplier = 1.5;
+            console.log(`Super fast wave completion! ${waveDuration.toFixed(1)}s vs expected ${expectedSeconds.toFixed(1)}s - 50% bonus!`);
+        } else if (waveDuration < expectedSeconds * 0.85) {
+            // Fast completion (15% faster than expected) - 25% bonus
+            timeMultiplier = 1.25;
+            console.log(`Fast wave completion! ${waveDuration.toFixed(1)}s vs expected ${expectedSeconds.toFixed(1)}s - 25% bonus!`);
+        } else if (waveDuration < expectedSeconds) {
+            // Better than expected completion - 10% bonus
+            timeMultiplier = 1.1;
+            console.log(`Good wave completion! ${waveDuration.toFixed(1)}s vs expected ${expectedSeconds.toFixed(1)}s - 10% bonus!`);
+        }
+        
         // Apply gold multipliers
         let waveBonus = baseWaveBonus;
         
@@ -401,9 +471,16 @@ export class Game {
         // Apply global gold multiplier
         waveBonus = Math.round(waveBonus * this.difficultySettings.goldMultiplier);
         
+        // Apply time multiplier to score (not gold)
+        const timeBonus = Math.round(waveBonus * timeMultiplier) - waveBonus;
+        
         // Add rewards
         this.player.gold += waveBonus;
-        this.player.score += waveBonus;
+        this.player.score += waveBonus + timeBonus;
+        
+        // Store time data for final scoring
+        waveInfo.timeBonus = timeBonus;
+        waveInfo.timeMultiplier = timeMultiplier;
         
         // Show wave completion bonus message
         this.showWaveCompletionMessage(waveBonus, waveNumber);
@@ -999,6 +1076,9 @@ export class Game {
         setTimeout(() => {
             console.log("Showing end screen");
             
+            // Save score to ranking system
+            this.savePlayerScore(isVictory);
+            
             // Show overlay
             overlay.style.display = '';
             overlay.classList.remove('hidden');
@@ -1025,6 +1105,9 @@ export class Game {
     
             // Display score
             scoreDisplay.textContent = `${this.player.username}'s Score: ${this.player.score}`;
+            
+            // Display player ranking
+            this.displayPlayerRanking(scoreDisplay);
             
             // Setup restart button to restart the game
             const restartButton = document.getElementById('restart-button');
@@ -1806,7 +1889,18 @@ export class Game {
         // Create a visual message for wave completion bonus
         if (!this.renderer) return;
         
-        const message = `Wave ${waveNumber} Complete! +${amount} Gold`;
+        // Get time bonus information if available
+        const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+        const timeBonus = waveInfo?.timeBonus || 0;
+        
+        // Create message with time bonus if applicable
+        let message;
+        if (timeBonus > 0) {
+            const timeBonusPercent = Math.round((waveInfo.timeMultiplier - 1) * 100);
+            message = `Wave ${waveNumber} Complete! +${amount} Gold +${timeBonus} (${timeBonusPercent}% Speed Bonus)`;
+        } else {
+            message = `Wave ${waveNumber} Complete! +${amount} Gold`;
+        }
         
         // Create a text canvas with more width to avoid text cutting
         const canvas = document.createElement('canvas');
@@ -1989,6 +2083,206 @@ export class Game {
         }, 2500);
     }
     
+    // Player ranking system methods
+    savePlayerScore(isVictory) {
+        if (!this.player.username || this.player.username === 'Player') {
+            console.log("No username provided, not saving score");
+            return;
+        }
+        
+        try {
+            // Calculate game duration in seconds
+            const gameEndTime = performance.now();
+            const gameDuration = Math.round((gameEndTime - this.gameStartTime) / 1000);
+            
+            // Prepare score data for both local storage and server
+            const gameScore = {
+                username: this.player.username,
+                score: this.player.score,
+                wave: this.currentWave,
+                victory: isVictory,
+                date: new Date().toISOString(),
+                duration: gameDuration,
+                gameData: {
+                    waveTimes: this.waveStartTimes,
+                    wavesCompleted: this.wavesCompleted,
+                    activeWaves: this.activeWaves
+                }
+            };
+            
+            // Save to localStorage as fallback
+            this.saveScoreToLocalStorage(gameScore);
+            
+            // Save to server database
+            this.saveScoreToServer(gameScore);
+            
+            console.log(`Score saved: ${this.player.username} - ${this.player.score} points (${isVictory ? 'Victory' : 'Defeat'}) - Duration: ${gameDuration}s`);
+        } catch (err) {
+            console.error("Error saving score:", err);
+        }
+    }
+    
+    saveScoreToLocalStorage(gameScore) {
+        try {
+            // Get existing scores from localStorage
+            let highScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+            
+            // Add to high scores and sort
+            highScores.push(gameScore);
+            
+            // Sort by score (highest first)
+            highScores.sort((a, b) => b.score - a.score);
+            
+            // Keep only top 20 scores
+            if (highScores.length > 20) {
+                highScores = highScores.slice(0, 20);
+            }
+            
+            // Save back to localStorage
+            localStorage.setItem('towerDefenseHighScores', JSON.stringify(highScores));
+            console.log("Score saved to localStorage as fallback");
+        } catch (err) {
+            console.error("Error saving score to localStorage:", err);
+        }
+    }
+    
+    saveScoreToServer(gameScore) {
+        try {
+            // API endpoint (adjust if needed)
+            const apiUrl = '/api/scores';
+            
+            // Remove gameData to reduce payload size (optional)
+            const scoreData = { ...gameScore };
+            
+            // Make POST request to server
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(scoreData)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Score saved to server database successfully!", data);
+            })
+            .catch(error => {
+                console.error("Error saving score to server:", error);
+                console.log("Using localStorage as fallback only");
+            });
+        } catch (err) {
+            console.error("Error in server score saving:", err);
+        }
+    }
+    
+    displayPlayerRanking(scoreDisplay) {
+        try {
+            // First try to get scores from the server
+            this.fetchScoresFromServer().then(serverScores => {
+                if (serverScores && serverScores.length > 0) {
+                    this.renderRankings(scoreDisplay, serverScores, "Server Rankings");
+                } else {
+                    // Fallback to localStorage if server fails
+                    const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                    if (localScores.length > 0) {
+                        this.renderRankings(scoreDisplay, localScores, "Local Rankings");
+                    }
+                }
+            }).catch(err => {
+                console.error("Error fetching server scores:", err);
+                // Fallback to localStorage
+                const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
+                if (localScores.length > 0) {
+                    this.renderRankings(scoreDisplay, localScores, "Local Rankings");
+                }
+            });
+        } catch (err) {
+            console.error("Error displaying ranking:", err);
+        }
+    }
+    
+    fetchScoresFromServer() {
+        return new Promise((resolve, reject) => {
+            fetch('/api/scores?limit=20')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Scores fetched from server:", data);
+                    resolve(data);
+                })
+                .catch(error => {
+                    console.error("Error fetching scores from server:", error);
+                    reject(error);
+                });
+        });
+    }
+    
+    renderRankings(scoreDisplay, scores, title) {
+        // If no scores, don't show anything
+        if (scores.length === 0) {
+            return;
+        }
+        
+        // Find rank of current player
+        const playerRank = scores.findIndex(score => 
+            score.username === this.player.username && 
+            score.score === this.player.score &&
+            score.wave === this.currentWave
+        );
+        
+        // Create ranking display
+        const rankingInfo = document.createElement('div');
+        rankingInfo.style.marginTop = '10px';
+        rankingInfo.style.color = '#4CAF50';
+        
+        if (playerRank !== -1) {
+            rankingInfo.textContent = `${title}: Rank ${playerRank + 1} of ${scores.length}`;
+        } else {
+            rankingInfo.textContent = `${title}: ${scores.length} total players`;
+        }
+        
+        // Create top scores section
+        const topScores = document.createElement('div');
+        topScores.style.marginTop = '15px';
+        topScores.style.fontSize = '0.9rem';
+        topScores.innerHTML = '<strong>Top 5 Scores:</strong><br>';
+        
+        // Add top 5 scores
+        for (let i = 0; i < Math.min(5, scores.length); i++) {
+            const scoreEntry = scores[i];
+            const scoreItem = document.createElement('div');
+            
+            // Format display based on available data
+            const scoreDetail = scoreEntry.victory ? 'Victory' : `Wave ${scoreEntry.wave}`;
+            const timeInfo = scoreEntry.duration ? ` (${Math.floor(scoreEntry.duration/60)}m ${scoreEntry.duration%60}s)` : '';
+            
+            scoreItem.textContent = `${i + 1}. ${scoreEntry.username}: ${scoreEntry.score} - ${scoreDetail}${timeInfo}`;
+            
+            // Highlight current player
+            if (scoreEntry.username === this.player.username && 
+                scoreEntry.score === this.player.score &&
+                scoreEntry.wave === this.currentWave) {
+                scoreItem.style.color = '#FFD700'; // Gold color
+                scoreItem.style.fontWeight = 'bold';
+            }
+            
+            topScores.appendChild(scoreItem);
+        }
+        
+        // Add to score display
+        scoreDisplay.appendChild(rankingInfo);
+        scoreDisplay.appendChild(topScores);
+    }
+
     createFireworksEffect() {
         // Create fireworks visual effect for victory
         const container = document.createElement('div');

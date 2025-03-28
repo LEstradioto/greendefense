@@ -118,16 +118,34 @@
         <div id="game-overlay">
             <div id="start-screen">
                 <h1>Green Defense</h1>
-                <input type="text" id="username" placeholder="Enter your username">
+                <input type="text" id="username" placeholder="Enter your username to participate in ranking">
                 <button id="start-button">Start Game</button>
+                <button id="show-rankings-button" class="secondary-button">View High Scores</button>
+                <div class="ai-disclaimer">100% AI made. <a href="https://github.com/luanestradioto/tower-defense" target="_blank">Read more</a></div>
+                <div class="portal-hint">Zoom out during gameplay to find the Vibeverse Portal!</div>
+                <div class="creator-links">
+                    <a href="https://luanestradioto.com" target="_blank" class="creator-link">Made by Luan Estradioto</a>
+                    <a href="https://x.com/EstradiotoLuan" target="_blank" class="creator-link twitter-link">@EstradiotoLuan</a>
+                </div>
+                <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
+            </div>
+            <div id="high-scores-screen" class="hidden">
+                <h1>High Scores</h1>
+                <div id="high-scores-list"></div>
+                <button id="back-to-start-button">Back</button>
             </div>
             <div id="end-screen" class="hidden">
                 <h1 id="result-message"></h1>
                 <div id="score-display"></div>
                 <button id="restart-button">Play Again</button>
+                <div class="creator-links">
+                    <a href="https://luanestradioto.com" target="_blank" class="creator-link">Made by Luan Estradioto</a>
+                    <a href="https://x.com/EstradiotoLuan" target="_blank" class="creator-link twitter-link">@EstradiotoLuan</a>
+                </div>
             </div>
         </div>
         <canvas id="game-canvas"></canvas>
+        <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
     </div>
 
     <script type="module" src="main.js"></script>

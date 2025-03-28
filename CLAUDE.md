@@ -1,0 +1,1 @@
+- Do not run node server or vite build, or any server stuff, let user/me do that

@@ -79,6 +79,12 @@ export class Renderer {
         // Set up lights
         this.setupLights();
 
+        // Keep a reference to this for scope reasons
+        this.canvasRef = canvas;
+        
+        // Create vibeverse portal
+        this.createVibeVersePortal();
+
         // Handle window resize
         window.addEventListener('resize', this.onWindowResize.bind(this));
 
@@ -2518,5 +2524,180 @@ export class Renderer {
 
         // Update renderer size
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    
+    // Vibeverse Portal methods
+    createVibeVersePortal() {
+        // Create portal group to contain all portal elements
+        this.portalGroup = new THREE.Group();
+        this.portalGroup.position.set(60, 5, 60); // Position it away from the main map
+        this.portalGroup.rotation.x = Math.PI / 2; // Lay flat to be visible from above
+        
+        // Create portal effect (green torus)
+        const portalGeometry = new THREE.TorusGeometry(7, 1, 16, 100);
+        const portalMaterial = new THREE.MeshPhongMaterial({
+            color: 0x00ff00,
+            emissive: 0x00ff00,
+            transparent: true,
+            opacity: 0.8
+        });
+        const portal = new THREE.Mesh(portalGeometry, portalMaterial);
+        portal.userData.isPortal = true;
+        this.portalGroup.add(portal);
+        
+        // Create portal inner surface (green circle)
+        const portalInnerGeometry = new THREE.CircleGeometry(6, 32);
+        const portalInnerMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+        const portalInner = new THREE.Mesh(portalInnerGeometry, portalInnerMaterial);
+        portalInner.position.z = 0.1; // Slight offset to avoid z-fighting
+        portalInner.userData.isPortal = true;
+        this.portalGroup.add(portalInner);
+        
+        // Add portal label
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 512;
+        canvas.height = 64;
+        context.fillStyle = '#00ff00';
+        context.font = 'bold 32px Arial';
+        context.textAlign = 'center';
+        context.fillText('VIBEVERSE PORTAL', canvas.width/2, canvas.height/2);
+        const texture = new THREE.CanvasTexture(canvas);
+        const labelGeometry = new THREE.PlaneGeometry(15, 2.5);
+        const labelMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        const label = new THREE.Mesh(labelGeometry, labelMaterial);
+        label.position.y = 10;
+        label.rotation.x = -Math.PI / 2; // Rotate to face upward
+        this.portalGroup.add(label);
+        
+        // Create particle system for portal effect
+        const particleCount = 500;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            // Create particles in a ring around the portal
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 7 + (Math.random() - 0.5) * 2;
+            positions[i] = Math.cos(angle) * radius;
+            positions[i + 1] = Math.sin(angle) * radius;
+            positions[i + 2] = (Math.random() - 0.5) * 2;
+            
+            // Green color with slight variation
+            colors[i] = 0;
+            colors[i + 1] = 0.8 + Math.random() * 0.2;
+            colors[i + 2] = 0;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        const particleMaterial = new THREE.PointsMaterial({
+            size: 0.2,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6
+        });
+        
+        this.portalParticleSystem = new THREE.Points(particles, particleMaterial);
+        this.portalGroup.add(this.portalParticleSystem);
+        
+        // Add portal group to scene
+        this.scene.add(this.portalGroup);
+        
+        // Start animation
+        this.animatePortal();
+        
+        // Create raycaster for detecting clicks on portal
+        this.setupPortalClickHandler();
+    }
+    
+    animatePortal() {
+        const animate = () => {
+            if (this.portalParticleSystem) {
+                const positions = this.portalParticleSystem.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i + 2] = 0.1 * Math.sin(Date.now() * 0.001 + i);
+                }
+                this.portalParticleSystem.geometry.attributes.position.needsUpdate = true;
+            }
+            
+            if (this.portalGroup) {
+                this.portalGroup.rotation.z += 0.005;
+            }
+            
+            requestAnimationFrame(animate);
+        };
+        
+        animate();
+    }
+    
+    setupPortalClickHandler() {
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        // Handle both mouse clicks and touch events
+        const handleInteraction = (event) => {
+            // Prevent default behavior for touches
+            if (event.preventDefault) event.preventDefault();
+            
+            // Get coordinates based on event type
+            let clientX, clientY;
+            
+            if (event.type === 'touchstart' || event.type === 'touchend') {
+                // Handle touch event
+                const touch = event.changedTouches[0];
+                clientX = touch.clientX;
+                clientY = touch.clientY;
+            } else {
+                // Handle mouse event
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+            
+            // Calculate position in normalized device coordinates
+            mouse.x = (clientX / this.canvasRef.clientWidth) * 2 - 1;
+            mouse.y = -(clientY / this.canvasRef.clientHeight) * 2 + 1;
+            
+            // Update the raycaster
+            raycaster.setFromCamera(mouse, this.camera);
+            
+            // Check for intersections with portal
+            const intersects = raycaster.intersectObjects(this.portalGroup.children, true);
+            
+            // If there's an intersection and the object is the portal, redirect
+            if (intersects.length > 0 && intersects[0].object.userData.isPortal) {
+                this.redirectToVibeverse();
+            }
+        };
+        
+        // Add event listeners for both mouse and touch
+        this.canvasRef.addEventListener('click', handleInteraction);
+        this.canvasRef.addEventListener('touchend', handleInteraction, { passive: false });
+    }
+    
+    redirectToVibeverse() {
+        // Gather player information for the portal
+        const username = window.game && window.game.player ? window.game.player.username : 'Player';
+        
+        // Build URL with player parameters
+        const params = new URLSearchParams();
+        params.append('portal', 'true');
+        params.append('username', username);
+        params.append('color', 'green'); // Color theme of our game
+        params.append('ref', window.location.hostname);
+        
+        // Redirect to the Vibeverse portal
+        window.location.href = `https://portal.pieter.com?${params.toString()}`;
     }
 }

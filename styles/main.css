@@ -54,24 +54,33 @@ body {
 
 @media (max-width: 768px) {
     #game-status {
-        padding: 8px 10px;
-        gap: 10px;
-        margin-bottom: 10px;
-        font-size: 0.8rem;
+        padding: 4px 6px;
+        gap: 6px;
+        margin-bottom: 6px;
+        font-size: 0.7rem;
         justify-content: center;
         width: 100%;
     }
     
     #ui-container {
-        padding: 10px;
+        padding: 5px;
     }
     
     #debug-controls {
         margin-left: 0;
-        margin-top: 8px;
+        margin-top: 4px;
         width: 100%;
         display: flex;
         justify-content: center;
+    }
+    
+    #next-wave-control {
+        margin: 0 4px;
+    }
+    
+    #send-next-wave-button {
+        padding: 3px 6px;
+        font-size: 0.7rem;
     }
 }
 
@@ -186,22 +195,55 @@ body {
     z-index: 10;
 }
 
+/* Ranking display in desktop */
+#rankings-display {
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 8px;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    position: absolute;
+    top: 380px; /* Moved down to 380px */
+    left: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    width: auto;
+    max-width: 250px;
+    z-index: 9;
+}
+
+#rankings-display h3 {
+    font-size: 14px;
+    margin-bottom: 5px;
+    color: #4CAF50;
+}
+
+.ranking-entry {
+    font-size: 12px;
+    padding: 3px 0;
+    border-bottom: 1px solid #333;
+}
+
+@media (max-width: 768px) {
+    #rankings-display {
+        display: none;
+    }
+}
+
 /* For mobile devices */
 @media (max-width: 768px) {
     #tower-selection {
         position: fixed;
-        top: 70px; /* Position right below the top menu */
+        top: 68px; /* Position right below the top menu - adjusted to 68px */
         left: 0;
         right: 0;
         margin: 0 auto;
         max-width: 95%;
-        padding: 4px 8px;
+        padding: 2px 4px;
         display: flex;
         flex-direction: row;
         flex-wrap: wrap; /* Allow wrapping on mobile */
         justify-content: space-between;
         border-radius: 5px;
-        gap: 4px;
+        gap: 2px;
     }
     
     .tower-selection-title {
@@ -235,9 +277,9 @@ body {
 
 @media (max-width: 768px) {
     .tower-option {
-        padding: 4px 5px;
-        font-size: 0.7rem;
-        margin: 1px;
+        padding: 2px 3px;
+        font-size: 0.6rem;
+        margin: 0;
         flex: 1;
         min-width: 0;
         text-align: center;
@@ -246,18 +288,19 @@ body {
     }
     
     .tower-option span {
-        margin-left: 2px;
-        font-size: 0.65rem;
+        margin-left: 1px;
+        font-size: 0.6rem;
         /* Keep the gold styling but with smaller padding for mobile */
-        padding: 1px 3px;
+        padding: 0px 1px;
         background-color: rgba(255, 215, 0, 0.2);
-        border-radius: 3px;
+        border-radius: 2px;
         color: gold;
     }
     
     .tower-option::before {
-        padding: 2px 4px;
-        margin-right: 3px;
+        padding: 1px 3px;
+        margin-right: 2px;
+        font-size: 0.6rem;
     }
 }
 
@@ -361,17 +404,7 @@ body {
 }
 
 #power-cards {
-    background-color: rgba(0, 0, 0, 0.8);
-    padding: 8px;
-    border-radius: 10px;
-    border: 2px solid #4CAF50;
-    display: flex;
-    gap: 8px;
-    position: absolute;
-    bottom: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    display: none; /* Hide power cards as they're no longer needed */
 }
 
 .power-card {
@@ -452,7 +485,7 @@ body {
     z-index: 10;
 }
 
-#start-screen, #end-screen {
+#start-screen, #end-screen, #high-scores-screen {
     background-color: #121212;
     padding: 40px;
     border-radius: 15px;
@@ -461,9 +494,114 @@ body {
     box-shadow: 0 0 30px rgba(76, 175, 80, 0.5);
     max-width: 500px;
     width: 90%;
+    position: relative;
 }
 
-#start-screen h1, #end-screen h1 {
+.ai-disclaimer {
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+.ai-disclaimer a {
+    color: #4CAF50;
+    text-decoration: none;
+}
+
+.ai-disclaimer a:hover {
+    text-decoration: underline;
+}
+
+.portal-hint {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: #00ff00;
+    font-weight: 400;
+    text-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
+    animation: portal-glow 2s infinite alternate;
+}
+
+@keyframes portal-glow {
+    from { text-shadow: 0 0 4px rgba(0, 255, 0, 0.5); }
+    to { text-shadow: 0 0 12px rgba(0, 255, 0, 0.8); }
+}
+
+.creator-links {
+    margin-top: 15px;
+}
+
+.creator-link {
+    color: rgba(170, 170, 170, 0.6);
+    font-size: 0.8rem;
+    text-decoration: none;
+    transition: color 0.3s ease;
+    display: inline-block;
+    margin: 0 5px;
+}
+
+.creator-link:hover {
+    color: rgba(170, 170, 170, 0.9);
+}
+
+.twitter-link {
+    color: rgba(29, 161, 242, 0.7);
+}
+
+.twitter-link:hover {
+    color: rgba(29, 161, 242, 0.9);
+}
+
+.creator-link-fixed {
+    position: fixed;
+    bottom: 10px;
+    right: 120px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
+    text-decoration: none;
+    z-index: 10000;
+}
+
+.creator-link-fixed:hover {
+    color: #4CAF50;
+}
+
+@media (max-width: 768px) {
+    .creator-link-fixed {
+        display: none;
+    }
+}
+
+.secondary-button {
+    margin-top: 15px;
+    background-color: #333 !important;
+    color: white !important;
+    border: 1px solid #4CAF50 !important;
+}
+
+.secondary-button:hover {
+    background-color: #444 !important;
+}
+
+#high-scores-list {
+    margin: 20px 0;
+    text-align: left;
+    font-size: 16px;
+    color: #e0e0e0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.score-entry {
+    padding: 8px 0;
+    border-bottom: 1px solid #333;
+}
+
+.score-entry.highlight {
+    color: #FFD700;
+    font-weight: bold;
+}
+
+#start-screen h1, #end-screen h1, #high-scores-screen h1 {
     font-family: 'Bangers', cursive;
     margin-bottom: 30px;
     color: #4CAF50;

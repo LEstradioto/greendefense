@@ -45,3 +45,5 @@ coverage/
 *.swp
 *.swo
 *~
+
+scores.db
