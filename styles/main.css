@@ -608,6 +608,46 @@ body {
     font-size: 3rem;
     text-shadow: 3px 3px 5px rgba(0, 0, 0, 0.7);
     letter-spacing: 2px;
+    position: relative;
+}
+
+/* GREEN title text with glowing effect */
+#green-title {
+    display: inline-block;
+    color: #00ff00; /* Bright green */
+    font-size: 3.2rem; /* Slightly larger for emphasis */
+    text-shadow: 0 0 15px #00ff00, 0 0 25px #00ff00; /* Glowing effect */
+    position: relative;
+    z-index: 2;
+    margin-right: 5px; /* Space on right side */
+    font-weight: bold;
+    letter-spacing: 2px;
+    animation: greenGlow 2s infinite alternate;
+    vertical-align: middle; /* Align with surrounding text */
+}
+
+@keyframes greenGlow {
+    from { text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00; }
+    to { text-shadow: 0 0 15px #00ff00, 0 0 30px #00ff00, 0 0 40px #00ff00; }
+}
+
+/* Responsive styles for mobile devices */
+@media (max-width: 768px) {
+    #green-title {
+        font-size: 2.2rem; /* Smaller font size on mobile */
+        letter-spacing: 1px; /* Tighter letter spacing on mobile */
+        text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00; /* Slightly reduced glow */
+    }
+    
+    #start-screen h1, #end-screen h1, #high-scores-screen h1 {
+        font-size: 2rem; /* Smaller base font size for the rest of the title */
+        margin-bottom: 20px; /* Reduced margin */
+    }
+    
+    #start-screen, #end-screen, #high-scores-screen {
+        padding: 25px 15px; /* Reduced padding on mobile */
+        width: 95%; /* Slightly wider container */
+    }
 }
 
 #username {

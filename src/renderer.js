@@ -37,6 +37,17 @@ export class Renderer {
         this.controls.dampingFactor = 0.25;
         this.controls.maxPolarAngle = Math.PI / 2.5; // Limit camera angle
         
+        // Set up zoom constraints and initial state
+        this.controls.minDistance = 10;
+        this.controls.maxDistance = 150;
+        this.controls.enableDamping = true; // Smooth camera movement
+        this.controls.dampingFactor = 0.05; // More fluid zooming
+        this.isZoomedOut = false; // Track zoom state
+        
+        // Add a lower zoom threshold for a less abrupt transition
+        this.zoomInThreshold = 80; // Threshold to consider "zoomed in" again
+        this.zoomOutThreshold = 100; // Threshold to consider "zoomed out"
+        
         // Add rotation tracking to prevent tower placement during rotation
         this.isRotating = false;
         this.lastControlsUpdate = Date.now();
@@ -82,7 +93,7 @@ export class Renderer {
         // Keep a reference to this for scope reasons
         this.canvasRef = canvas;
         
-        // Create vibeverse portal
+        // Create vibeverse portal HTML button (will be shown when zoomed out)
         this.createVibeVersePortal();
 
         // Handle window resize
@@ -240,6 +251,30 @@ export class Renderer {
         // we can consider the rotation to have stopped (much more responsive)
         if (this.isRotating && (Date.now() - this.lastControlsUpdate > 50)) {
             this.isRotating = false;
+        }
+
+        // Check camera distance for zoom level
+        const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
+        
+        // Use different thresholds for zooming in and out to create hysteresis
+        // This prevents rapid toggling of the portal button when at the threshold
+        const wasZoomedOut = this.isZoomedOut;
+        
+        if (wasZoomedOut) {
+            // When already zoomed out, require moving closer to zoom back in
+            this.isZoomedOut = cameraDistance > this.zoomInThreshold;
+        } else {
+            // When zoomed in, require moving farther to trigger zoom out
+            this.isZoomedOut = cameraDistance > this.zoomOutThreshold;
+        }
+        
+        // Handle HTML portal button visibility based on zoom state
+        if (!wasZoomedOut && this.isZoomedOut) {
+            // Just zoomed out, show the HTML button
+            this.showPortalButton();
+        } else if (wasZoomedOut && !this.isZoomedOut) {
+            // Just zoomed in, hide the HTML button
+            this.hidePortalButton();
         }
 
         // Toggle debug helpers
@@ -2528,162 +2563,156 @@ export class Renderer {
     
     // Vibeverse Portal methods
     createVibeVersePortal() {
-        // Create portal group to contain all portal elements
-        this.portalGroup = new THREE.Group();
-        this.portalGroup.position.set(60, 5, 60); // Position it away from the main map
-        this.portalGroup.rotation.x = Math.PI / 2; // Lay flat to be visible from above
-        
-        // Create portal effect (green torus)
-        const portalGeometry = new THREE.TorusGeometry(7, 1, 16, 100);
-        const portalMaterial = new THREE.MeshPhongMaterial({
-            color: 0x00ff00,
-            emissive: 0x00ff00,
-            transparent: true,
-            opacity: 0.8
-        });
-        const portal = new THREE.Mesh(portalGeometry, portalMaterial);
-        portal.userData.isPortal = true;
-        this.portalGroup.add(portal);
-        
-        // Create portal inner surface (green circle)
-        const portalInnerGeometry = new THREE.CircleGeometry(6, 32);
-        const portalInnerMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ff00,
-            transparent: true,
-            opacity: 0.5,
-            side: THREE.DoubleSide
-        });
-        const portalInner = new THREE.Mesh(portalInnerGeometry, portalInnerMaterial);
-        portalInner.position.z = 0.1; // Slight offset to avoid z-fighting
-        portalInner.userData.isPortal = true;
-        this.portalGroup.add(portalInner);
-        
-        // Add portal label
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = 512;
-        canvas.height = 64;
-        context.fillStyle = '#00ff00';
-        context.font = 'bold 32px Arial';
-        context.textAlign = 'center';
-        context.fillText('VIBEVERSE PORTAL', canvas.width/2, canvas.height/2);
-        const texture = new THREE.CanvasTexture(canvas);
-        const labelGeometry = new THREE.PlaneGeometry(15, 2.5);
-        const labelMaterial = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-        const label = new THREE.Mesh(labelGeometry, labelMaterial);
-        label.position.y = 10;
-        label.rotation.x = -Math.PI / 2; // Rotate to face upward
-        this.portalGroup.add(label);
-        
-        // Create particle system for portal effect
-        const particleCount = 500;
-        const particles = new THREE.BufferGeometry();
-        const positions = new Float32Array(particleCount * 3);
-        const colors = new Float32Array(particleCount * 3);
-        
-        for (let i = 0; i < particleCount * 3; i += 3) {
-            // Create particles in a ring around the portal
-            const angle = Math.random() * Math.PI * 2;
-            const radius = 7 + (Math.random() - 0.5) * 2;
-            positions[i] = Math.cos(angle) * radius;
-            positions[i + 1] = Math.sin(angle) * radius;
-            positions[i + 2] = (Math.random() - 0.5) * 2;
-            
-            // Green color with slight variation
-            colors[i] = 0;
-            colors[i + 1] = 0.8 + Math.random() * 0.2;
-            colors[i + 2] = 0;
-        }
-        
-        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        
-        const particleMaterial = new THREE.PointsMaterial({
-            size: 0.2,
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.6
-        });
-        
-        this.portalParticleSystem = new THREE.Points(particles, particleMaterial);
-        this.portalGroup.add(this.portalParticleSystem);
-        
-        // Add portal group to scene
-        this.scene.add(this.portalGroup);
-        
-        // Start animation
-        this.animatePortal();
-        
-        // Create raycaster for detecting clicks on portal
-        this.setupPortalClickHandler();
+        // Create the HTML button for the portal instead of 3D objects
+        this.createHtmlPortalButton();
     }
     
-    animatePortal() {
-        const animate = () => {
-            if (this.portalParticleSystem) {
-                const positions = this.portalParticleSystem.geometry.attributes.position.array;
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i + 2] = 0.1 * Math.sin(Date.now() * 0.001 + i);
+    createHtmlPortalButton() {
+        // Create a div for the portal button if it doesn't already exist
+        if (!this.portalButtonElement) {
+            // Create main container
+            const buttonContainer = document.createElement('div');
+            buttonContainer.id = 'portal-button-container';
+            
+            // Apply styles
+            Object.assign(buttonContainer.style, {
+                position: 'fixed',
+                zIndex: '1000',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'none', // Initially hidden
+                textAlign: 'center'
+            });
+            
+            // Create button element
+            const button = document.createElement('button');
+            button.id = 'portal-button';
+            button.textContent = 'ENTER PORTAL';
+            
+            // Apply styles to the button
+            Object.assign(button.style, {
+                background: 'linear-gradient(to bottom, #00ff00, #008800)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '50px',
+                padding: '20px 40px',
+                fontSize: '20px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                boxShadow: '0 0 20px #00ff00, 0 0 40px rgba(0, 255, 0, 0.5)',
+                transition: 'all 0.3s ease',
+                outline: 'none',
+                fontFamily: 'Arial, sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '2px',
+                position: 'relative',
+                overflow: 'hidden'
+            });
+            
+            // Pulsing animation using CSS
+            const keyframes = `
+                @keyframes pulse {
+                    0% { transform: scale(1); box-shadow: 0 0 20px #00ff00, 0 0 40px rgba(0, 255, 0, 0.5); }
+                    50% { transform: scale(1.05); box-shadow: 0 0 30px #00ff00, 0 0 50px rgba(0, 255, 0, 0.7); }
+                    100% { transform: scale(1); box-shadow: 0 0 20px #00ff00, 0 0 40px rgba(0, 255, 0, 0.5); }
                 }
-                this.portalParticleSystem.geometry.attributes.position.needsUpdate = true;
-            }
+            `;
             
-            if (this.portalGroup) {
-                this.portalGroup.rotation.z += 0.005;
-            }
+            // Create style element for the animation
+            const style = document.createElement('style');
+            style.type = 'text/css';
+            style.appendChild(document.createTextNode(keyframes));
+            document.head.appendChild(style);
             
-            requestAnimationFrame(animate);
-        };
-        
-        animate();
+            // Add animation to button
+            button.style.animation = 'pulse 1.5s infinite';
+            
+            // Add label above the button
+            const label = document.createElement('div');
+            label.textContent = 'VIBEVERSE PORTAL';
+            
+            // Apply styles to the label
+            Object.assign(label.style, {
+                color: '#00ff00',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                marginBottom: '20px',
+                textShadow: '0 0 10px #00ff00, 0 0 20px #00ff00',
+                fontFamily: 'Arial, sans-serif'
+            });
+            
+            // Add event listener for click
+            button.addEventListener('click', () => {
+                // Click animation
+                button.style.transform = 'scale(1.2)';
+                button.style.opacity = '0';
+                setTimeout(() => this.redirectToVibeverse(), 300);
+            });
+            
+            // Add hover effect
+            button.addEventListener('mouseenter', () => {
+                button.style.backgroundColor = '#00cc00';
+                button.style.transform = 'translateY(-5px)';
+                button.style.boxShadow = '0 0 30px #00ff00, 0 0 60px rgba(0, 255, 0, 0.7)';
+            });
+            
+            button.addEventListener('mouseleave', () => {
+                button.style.backgroundColor = '';
+                button.style.transform = '';
+                button.style.boxShadow = '0 0 20px #00ff00, 0 0 40px rgba(0, 255, 0, 0.5)';
+            });
+            
+            // Add elements to the DOM
+            buttonContainer.appendChild(label);
+            buttonContainer.appendChild(button);
+            document.body.appendChild(buttonContainer);
+            
+            // Store reference to the button container
+            this.portalButtonElement = buttonContainer;
+        }
     }
     
-    setupPortalClickHandler() {
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        
-        // Handle both mouse clicks and touch events
-        const handleInteraction = (event) => {
-            // Prevent default behavior for touches
-            if (event.preventDefault) event.preventDefault();
+    // Show the HTML portal button
+    showPortalButton() {
+        if (this.portalButtonElement) {
+            // Fade in the button with animation
+            this.portalButtonElement.style.display = 'block';
+            this.portalButtonElement.style.opacity = '0';
             
-            // Get coordinates based on event type
-            let clientX, clientY;
+            // Trigger reflow
+            void this.portalButtonElement.offsetWidth;
             
-            if (event.type === 'touchstart' || event.type === 'touchend') {
-                // Handle touch event
-                const touch = event.changedTouches[0];
-                clientX = touch.clientX;
-                clientY = touch.clientY;
-            } else {
-                // Handle mouse event
-                clientX = event.clientX;
-                clientY = event.clientY;
+            // Add transition for smooth appearance
+            this.portalButtonElement.style.transition = 'opacity 0.5s ease';
+            this.portalButtonElement.style.opacity = '1';
+            
+            // Add entrance animation - scale up from smaller size
+            const button = document.getElementById('portal-button');
+            if (button) {
+                button.style.transform = 'scale(0.8)';
+                
+                // Trigger reflow
+                void button.offsetWidth;
+                
+                button.style.transition = 'transform 0.5s ease-out';
+                button.style.transform = 'scale(1)';
             }
+        }
+    }
+    
+    // Hide the HTML portal button
+    hidePortalButton() {
+        if (this.portalButtonElement) {
+            // Fade out the button
+            this.portalButtonElement.style.transition = 'opacity 0.5s ease';
+            this.portalButtonElement.style.opacity = '0';
             
-            // Calculate position in normalized device coordinates
-            mouse.x = (clientX / this.canvasRef.clientWidth) * 2 - 1;
-            mouse.y = -(clientY / this.canvasRef.clientHeight) * 2 + 1;
-            
-            // Update the raycaster
-            raycaster.setFromCamera(mouse, this.camera);
-            
-            // Check for intersections with portal
-            const intersects = raycaster.intersectObjects(this.portalGroup.children, true);
-            
-            // If there's an intersection and the object is the portal, redirect
-            if (intersects.length > 0 && intersects[0].object.userData.isPortal) {
-                this.redirectToVibeverse();
-            }
-        };
-        
-        // Add event listeners for both mouse and touch
-        this.canvasRef.addEventListener('click', handleInteraction);
-        this.canvasRef.addEventListener('touchend', handleInteraction, { passive: false });
+            // After animation completes, set display to none
+            setTimeout(() => {
+                this.portalButtonElement.style.display = 'none';
+            }, 500);
+        }
     }
     
     redirectToVibeverse() {
@@ -2697,7 +2726,8 @@ export class Renderer {
         params.append('color', 'green'); // Color theme of our game
         params.append('ref', window.location.hostname);
         
-        // Redirect to the Vibeverse portal
-        window.location.href = `https://portal.pieter.com?${params.toString()}`;
+        // Redirect to the Vibeverse portal with updated URL
+        window.location.href = `http://portal.pieter.com?${params.toString()}`;
     }
+    
 }
