@@ -13,17 +13,17 @@ export class TCGIntegration {
         this.hand = []; // Cards currently in hand
         this.deckSize = 30; // Standard deck size
         this.maxCardsInHand = 5; // Maximum cards in hand
-        this.mana = 5; // Starting mana
-        this.maxMana = 5; // Starting maximum mana (increases with waves)
-        this.absoluteMaxMana = 10; // Maximum possible mana cap
+        this.mana = 8; // Starting mana (increased from 5)
+        this.maxMana = 8; // Starting maximum mana (increased from 5)
+        this.absoluteMaxMana = 12; // Maximum possible mana cap (increased from 10)
         this.lastManaRegenTime = 0; // Track last mana regeneration time
         this.manaRegenInterval = 15000; // Regenerate mana every 15 seconds
         this.manaRegenAmount = 1; // Amount of mana regenerated
         this.currentTurn = 0;
         
         // Initial state for reset
-        this.initialMana = 5;
-        this.initialMaxMana = 5;
+        this.initialMana = 8;
+        this.initialMaxMana = 8;
         
         // Power cards integration
         this.powerCards = [];
@@ -1132,23 +1132,21 @@ export class TCGIntegration {
         // Set max mana based on current wave - more gradual progression
         switch (currentWave) {
             case 1:
-                this.maxMana = 5;
-                break;
-            case 2:
-                this.maxMana = 6;
-                break;
-            case 3:
-                this.maxMana = 7;
-                break;
-            case 4:
                 this.maxMana = 8;
                 break;
-            case 5:
+            case 2:
                 this.maxMana = 9;
                 break;
+            case 3:
+                this.maxMana = 10;
+                break;
+            case 4:
+                this.maxMana = 11;
+                break;
+            case 5:
             case 6:
             default:
-                this.maxMana = this.absoluteMaxMana; // 10
+                this.maxMana = this.absoluteMaxMana; // 12
                 break;
         }
         

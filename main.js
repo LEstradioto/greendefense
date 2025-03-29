@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Play a track from the shuffled list
         const playRandomTrack = () => {
             backgroundMusic.src = shuffledTracks[currentTrackIndex];
-            backgroundMusic.volume = 0.2; // Lower volume from 0.4 to 0.2
+            backgroundMusic.volume = 0.15; // Lower volume further from 0.2 to 0.15
             backgroundMusic.load();
             backgroundMusic.play().catch(err => console.log('Could not autoplay music'));
             
@@ -135,15 +135,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Local sound file paths
         const soundUrls = {
             'towerShoot': [
-                "./bowShot.mp3" // Local bow shot sound
+                "/bowShot.mp3" // Local bow shot sound
             ],
             'enemyHit': [
-                "./enemyHit.wav", // Local hit sound
-                "./enemyHit2.wav" // Alternative hit sound
+                "/enemyHit.wav", // Local hit sound
+                "/enemyHit2.wav" // Alternative hit sound
             ],
             'loseLife': [
-                "./loseHit1.mp3", // Local lose life sound
-                "./loseHit2.mp3" // Alternative lose life sound
+                "/loseHit1.mp3", // Local lose life sound
+                "/loseHit2.mp3" // Alternative lose life sound
             ]
         };
         
@@ -197,26 +197,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Create a fresh sound to allow independent playback and pitch variation
                 const sound = new Audio(soundUrls[soundType][urlIndex]);
                 
-                // Set base volume depending on sound type
+                // Set extremely low base volumes for all sound types
+                let baseVolume;
                 if (soundType === 'loseLife') {
-                    sound.volume = 0.5; 
+                    baseVolume = 0.15; // Low volume for lose life
                 } else if (soundType === 'enemyHit') {
-                    sound.volume = 0.4;
+                    baseVolume = 0.12; // Very low for enemy hit sounds
                 } else {
-                    sound.volume = 0.35;
+                    baseVolume = 0.1; // Extremely low for tower shooting (most frequent)
                 }
                 
-                // Add subtle variation to avoid audio fatigue
-                // We'll use playbackRate for a simple pitch/speed variation
-                if (soundType === 'towerShoot') {
-                    // More variation for frequently played sounds
-                    sound.playbackRate = 0.9 + (Math.random() * 0.3); // 0.9-1.2 range
-                    
-                    // Add slight volume variation too
-                    sound.volume *= (0.85 + (Math.random() * 0.3)); // 85%-115% of base volume
+                // Add substantial volume variation to make sounds less repetitive
+                // Sometimes make sound nearly silent or completely silent
+                const volumeVariation = Math.random();
+                
+                // 10% chance for no sound at all - i.e., skip playing
+                if (volumeVariation < 0.1) {
+                    return; // Skip playing this sound completely
+                }
+                
+                // 20% chance for very quiet sound
+                if (volumeVariation < 0.3) {
+                    sound.volume = baseVolume * 0.3; // Very quiet (6-9% volume)
                 } else {
-                    // Less variation for less frequent sounds
-                    sound.playbackRate = 0.95 + (Math.random() * 0.2); // 0.95-1.15 range
+                    // Normal case: variable volume based on random factor
+                    sound.volume = baseVolume * (0.5 + (volumeVariation * 0.5)); // 50-100% of base volume
+                }
+                
+                // Add pitch variation to avoid audio fatigue
+                // More variation for frequently played sounds
+                if (soundType === 'towerShoot') {
+                    sound.playbackRate = 0.85 + (Math.random() * 0.4); // Wider range: 0.85-1.25
+                } else {
+                    sound.playbackRate = 0.9 + (Math.random() * 0.3); // 0.9-1.2 range
                 }
                 
                 // Play the sound with error handling

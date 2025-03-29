@@ -482,14 +482,15 @@ export class Projectile {
         
         // Create individual particles
         for (let i = 0; i < particleCount; i++) {
-            // Create small spheres for particles
-            const particleGeometry = new THREE.SphereGeometry(0.1 + Math.random() * 0.2, 8, 8);
+            // Create smaller spheres for particles
+            const particleGeometry = new THREE.SphereGeometry(0.05 + Math.random() * 0.15, 8, 8);
             
             // Use custom material with special stencil settings to respect ground plane
+            // With significantly increased transparency
             const particleMaterial = new THREE.MeshBasicMaterial({
                 color: color,
                 transparent: true,
-                opacity: 0.6 + Math.random() * 0.3,
+                opacity: 0.2 + Math.random() * 0.2, // Much lower opacity (0.2-0.4 range)
                 depthTest: true, // Enable depth testing
                 depthWrite: false, // Don't write to depth buffer
                 blending: THREE.AdditiveBlending,
@@ -510,11 +511,11 @@ export class Projectile {
             particle.position.y = radius * Math.sin(phi) * Math.sin(theta) + 0.2; // Lift slightly above ground
             particle.position.z = radius * Math.cos(phi);
             
-            // Store initial values for animation
+            // Store initial values for animation - with smaller scales
             particle.userData = {
-                initialScale: 0.5 + Math.random() * 0.5,
-                finalScale: 1.5 + Math.random() * 1.0,
-                speed: 0.5 + Math.random() * 1.0
+                initialScale: 0.3 + Math.random() * 0.3, // Smaller initial scale
+                finalScale: 0.8 + Math.random() * 0.5, // Much smaller final scale
+                speed: 0.4 + Math.random() * 0.6 // Slightly slower animation
             };
             
             explosionGroup.add(particle);

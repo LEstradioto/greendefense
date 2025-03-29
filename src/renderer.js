@@ -1160,11 +1160,9 @@ export class Renderer {
         const towerGroup = new THREE.Group();
         let baseMaterial, topMaterial;
         
-        // Determine if this is a special tower or basic tower
-        // Special towers: any tower with elemental type or cannon/doubleArrow
-        const isSpecialTower = tower.element !== ElementTypes.NEUTRAL || 
-                              tower.type === 'cannon' || 
-                              tower.type === 'doubleArrow';
+        // Determine if this is a special tower (only elemental towers, not cannon/doubleArrow)
+        // Special towers: any tower with elemental type (excluding cannon and doubleArrow)
+        const isSpecialTower = tower.element !== ElementTypes.NEUTRAL;
 
         // Get element style if tower has an element
         const elementStyle = tower.element && ElementStyles[tower.element] ? 

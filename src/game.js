@@ -38,6 +38,11 @@ export class Game {
         this.cardDebugMode = false; // New debug mode for testing cards
         this.isMultiplayer = false; // Will be used for TCG enemy cards
         
+        // Progressive difficulty tracking
+        this.consecutiveWavesWithoutLosses = 0; // Track waves completed without losing lives
+        this.initialLives = 20; // Store initial lives value
+        this.difficultyIncreaseActive = false; // Track if difficulty has been increased
+        
         // Game balance settings
         this.difficultySettings = {
             enemyHealthMultiplier: 1.0,    // Base multiplier for enemy health
@@ -47,8 +52,9 @@ export class Game {
             waveSpeedMultiplier: 1.0,       // Base multiplier for spawn rate
             spawnIntervalMultiplier: 1.0,  // Controls time between enemy spawns
             randomFactorMultiplier: 0.2,   // Random variation in enemy stats (0-1)
-            bossHealthMultiplier: 3.0,     // Multiplier for boss health
-            bossSpeedMultiplier: 0.7       // Multiplier for boss speed (slower but tougher)
+            bossHealthMultiplier: 3.0,     // Base multiplier for boss health
+            bossSpeedMultiplier: 0.7,      // Base multiplier for boss speed (slower but tougher)
+            lateStageBossBonus: 2.0        // Additional multiplier for bosses in waves 4-6
         };
         
         // Per-wave difficulty settings
@@ -56,9 +62,9 @@ export class Game {
             { enemyHealth: 1.0, enemySpeed: 1.0, enemyCount: 10, goldMultiplier: 1.0, spawnBoss: false, batchSpawning: false },  // Wave 1
             { enemyHealth: 1.2, enemySpeed: 1.0, enemyCount: 15, goldMultiplier: 1.2, spawnBoss: false, batchSpawning: false },  // Wave 2
             { enemyHealth: 1.5, enemySpeed: 1.1, enemyCount: 20, goldMultiplier: 1.4, spawnBoss: false, batchSpawning: true },   // Wave 3
-            { enemyHealth: 1.8, enemySpeed: 1.2, enemyCount: 25, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4
-            { enemyHealth: 2.0, enemySpeed: 1.3, enemyCount: 30, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true },    // Wave 5
-            { enemyHealth: 2.5, enemySpeed: 1.5, enemyCount: 40, goldMultiplier: 2.0, spawnBoss: true, batchSpawning: true }     // Wave 6
+            { enemyHealth: 3.0, enemySpeed: 1.3, enemyCount: 35, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4 - Much higher health, more enemies
+            { enemyHealth: 4.5, enemySpeed: 1.4, enemyCount: 50, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true },    // Wave 5 - Significantly increased health and count
+            { enemyHealth: 6.0, enemySpeed: 1.5, enemyCount: 80, goldMultiplier: 2.0, spawnBoss: true, batchSpawning: true }     // Wave 6 - Massive wave with very tough enemies
         ];
 
         // Game timing
@@ -188,16 +194,43 @@ export class Game {
                         
                         // Apply batch spawning logic if enabled for this wave
                         if (waveSettings.batchSpawning) {
-                            // Create a batch pattern: fast spawns followed by a delay
-                            const batchSize = 3; // Number of enemies in a batch
-                            const batchPosition = waveInfo.enemiesSpawned % (batchSize + 1); 
-                            
-                            if (batchPosition < batchSize) {
-                                // Within a batch - spawn quickly
-                                adjustedInterval = adjustedInterval * 0.3; // Much faster spawns within a batch
+                            // For waves 4-6, use enhanced challenging batch spawning
+                            if (waveInfo.waveNumber >= 4) {
+                                // More intense spawning patterns for higher waves
+                                const waveIntensity = waveInfo.waveNumber - 3; // 1 for wave 4, 2 for wave 5, 3 for wave 6
+                                
+                                // Larger batch sizes for higher waves with random variation
+                                const baseBatchSize = 5 + waveIntensity; // 6, 7, 8 for waves 4, 5, 6
+                                const randomVariation = Math.floor(Math.random() * 3); // 0, 1, or 2
+                                const batchSize = baseBatchSize + randomVariation;
+                                
+                                const batchPosition = waveInfo.enemiesSpawned % (batchSize + Math.ceil(waveIntensity * 0.5));
+                                
+                                if (batchPosition < batchSize) {
+                                    // Near-simultaneous spawning - extremely fast within batch
+                                    adjustedInterval = adjustedInterval * (0.15 - (waveIntensity * 0.03)); // 0.15, 0.12, 0.09
+                                } else {
+                                    // Longer delay between batches to create distinct waves of enemies
+                                    adjustedInterval = adjustedInterval * (2.5 + (waveIntensity * 0.5)); // 3.0, 3.5, 4.0
+                                }
+                                
+                                // Every ~3 batches, add a surprise burst (1 in 3 chance when between batches)
+                                if (batchPosition >= batchSize && Math.random() < 0.3) {
+                                    // Surprise burst - no delay
+                                    adjustedInterval = 0;
+                                }
                             } else {
-                                // Between batches - longer delay
-                                adjustedInterval = adjustedInterval * 2.0; // Longer delay between batches
+                                // Original logic for waves 1-3
+                                const batchSize = 6;
+                                const batchPosition = waveInfo.enemiesSpawned % (batchSize + 1); 
+                                
+                                if (batchPosition < batchSize) {
+                                    // Within a batch - spawn quickly
+                                    adjustedInterval = adjustedInterval * 0.25; // Even faster spawns within a batch
+                                } else {
+                                    // Between batches - longer delay
+                                    adjustedInterval = adjustedInterval * 2.5; // Longer delay between batches
+                                }
                             }
                         }
                         
@@ -485,6 +518,46 @@ export class Game {
         // Show wave completion bonus message
         this.showWaveCompletionMessage(waveBonus, waveNumber);
 
+        // Track consecutive waves without life loss and increase difficulty
+        // Check if player lost lives during this wave
+        if (this.player.lives === this.initialLives) {
+            // No life lost this wave
+            this.consecutiveWavesWithoutLosses++;
+            console.log(`[DIFFICULTY] No lives lost in wave ${waveNumber}. Consecutive perfect waves: ${this.consecutiveWavesWithoutLosses}`);
+            
+            // If player completed 2 consecutive waves without losing lives, increase difficulty
+            if (this.consecutiveWavesWithoutLosses >= 2 && !this.difficultyIncreaseActive) {
+                this.difficultyIncreaseActive = true;
+                
+                // Increase enemy health and speed for next wave only
+                const originalHealthMultiplier = this.difficultySettings.enemyHealthMultiplier;
+                const originalSpeedMultiplier = this.difficultySettings.enemySpeedMultiplier;
+                
+                // Apply stronger bonuses
+                this.difficultySettings.enemyHealthMultiplier *= 1.5; // 50% more health
+                this.difficultySettings.enemySpeedMultiplier *= 1.2; // 20% more speed
+                
+                console.log(`[DIFFICULTY] Increasing difficulty for next wave! Health multiplier: ${originalHealthMultiplier} -> ${this.difficultySettings.enemyHealthMultiplier}, Speed multiplier: ${originalSpeedMultiplier} -> ${this.difficultySettings.enemySpeedMultiplier}`);
+                
+                // Show message about increasing difficulty
+                this.showDifficultyIncreaseMessage();
+            }
+        } else {
+            // Reset consecutive wave counter if lives were lost
+            if (this.difficultyIncreaseActive) {
+                // Reset difficulty if it was increased
+                this.difficultySettings.enemyHealthMultiplier /= 1.5;
+                this.difficultySettings.enemySpeedMultiplier /= 1.2;
+                console.log(`[DIFFICULTY] Resetting difficulty due to life loss. Health multiplier: ${this.difficultySettings.enemyHealthMultiplier}, Speed multiplier: ${this.difficultySettings.enemySpeedMultiplier}`);
+                this.difficultyIncreaseActive = false;
+            }
+            this.consecutiveWavesWithoutLosses = 0;
+            console.log(`[DIFFICULTY] Lives lost in wave ${waveNumber}. Resetting consecutive perfect waves.`);
+            
+            // Update initial lives count for next wave
+            this.initialLives = this.player.lives;
+        }
+
         // Update UI
         this.updateUI();
         
@@ -610,7 +683,7 @@ export class Game {
             console.log("Spawning boss enemy!");
         }
         
-        // Find a random entry point at the top of the map
+        // Find valid entry points at the top of the map
         const validEntryPoints = [];
         for (let x = 0; x < this.map.gridWidth; x++) {
             if (this.map.grid[0][x] === 1) {
@@ -618,9 +691,124 @@ export class Game {
             }
         }
 
-        // Choose a random entry point
-        const randomEntryIndex = Math.floor(Math.random() * validEntryPoints.length);
-        const startGridPoint = validEntryPoints[randomEntryIndex];
+        let startGridPoint;
+        
+        // Enhanced spawn patterns for waves 4-6
+        if (waveInfo && waveInfo.waveNumber >= 4) {
+            // Get the number of entry points available
+            const numEntryPoints = validEntryPoints.length;
+            
+            // For later waves, we want to bias spawns toward the edges to make defense harder
+            const waveIntensity = waveInfo.waveNumber - 3; // 1 for wave 4, 2 for wave 5, 3 for wave 6
+            
+            // Different spawn patterns for each late-game wave
+            if (waveInfo.waveNumber === 4) {
+                // Wave 4: Favor left/right sides and sometimes center
+                const spawnPattern = waveInfo.enemiesSpawned % 5; // 0,1,2,3,4
+                
+                if (spawnPattern === 0) {
+                    // Left side
+                    const leftIndex = Math.floor(numEntryPoints * 0.25);
+                    startGridPoint = validEntryPoints[leftIndex];
+                } else if (spawnPattern === 1) {
+                    // Right side
+                    const rightIndex = Math.floor(numEntryPoints * 0.75);
+                    startGridPoint = validEntryPoints[rightIndex];
+                } else {
+                    // Random but weighted toward edges
+                    const useEdge = Math.random() < 0.6;
+                    if (useEdge) {
+                        // Choose left or right edge
+                        const useLeft = Math.random() < 0.5;
+                        const edgeIndex = useLeft ? 
+                            Math.floor(numEntryPoints * 0.1) : 
+                            Math.floor(numEntryPoints * 0.9);
+                        startGridPoint = validEntryPoints[edgeIndex];
+                    } else {
+                        // Use center-ish
+                        const centerIndex = Math.floor(numEntryPoints * 0.5) + Math.floor(Math.random() * 3) - 1;
+                        startGridPoint = validEntryPoints[Math.min(Math.max(0, centerIndex), numEntryPoints - 1)];
+                    }
+                }
+            } else if (waveInfo.waveNumber === 5) {
+                // Wave 5: Create groups from multiple entry points simultaneously
+                // Divide enemies into groups of 4
+                const groupSize = 4;
+                const groupNumber = Math.floor(waveInfo.enemiesSpawned / groupSize);
+                const positionInGroup = waveInfo.enemiesSpawned % groupSize;
+                
+                // Each group gets its own spawn point
+                if (positionInGroup === 0) {
+                    // Start of a new group - select a spawn point based on sequence
+                    const spawnSequence = groupNumber % 3; // 0,1,2
+                    
+                    if (spawnSequence === 0) {
+                        // Left side
+                        const leftIndex = Math.floor(numEntryPoints * 0.2);
+                        waveInfo.currentSpawnPoint = validEntryPoints[leftIndex];
+                    } else if (spawnSequence === 1) {
+                        // Right side
+                        const rightIndex = Math.floor(numEntryPoints * 0.8);
+                        waveInfo.currentSpawnPoint = validEntryPoints[rightIndex];
+                    } else {
+                        // Center
+                        const centerIndex = Math.floor(numEntryPoints * 0.5);
+                        waveInfo.currentSpawnPoint = validEntryPoints[centerIndex];
+                    }
+                }
+                
+                // Use the group's spawn point for all enemies in the group
+                startGridPoint = waveInfo.currentSpawnPoint;
+            } else { // Wave 6
+                // Wave 6: Complete chaos - true multi-point spawning
+                // Group size decreases as wave progresses to create more chaos
+                const initialGroupSize = 3;
+                const spawnedRatio = waveInfo.enemiesSpawned / this.waveSettings[5].enemyCount;
+                const adaptiveGroupSize = Math.max(1, Math.floor(initialGroupSize * (1 - spawnedRatio)));
+                
+                const groupNumber = Math.floor(waveInfo.enemiesSpawned / adaptiveGroupSize);
+                const positionInGroup = waveInfo.enemiesSpawned % adaptiveGroupSize;
+                
+                if (positionInGroup === 0) {
+                    // Calculate a new spawn point for this group
+                    // As wave progresses, make spawn points more random to overwhelm player
+                    if (spawnedRatio < 0.3) {
+                        // Early wave 6: Mainly from sides
+                        const useLeft = Math.random() < 0.5;
+                        const edgeIndex = useLeft ? 
+                            Math.floor(numEntryPoints * 0.15) : 
+                            Math.floor(numEntryPoints * 0.85);
+                        waveInfo.currentSpawnPoint = validEntryPoints[edgeIndex];
+                    } else if (spawnedRatio < 0.7) {
+                        // Mid wave 6: From all areas, but more from unexpected places
+                        const rand = Math.random();
+                        let index;
+                        if (rand < 0.3) {
+                            // Left third
+                            index = Math.floor(Math.random() * (numEntryPoints / 3));
+                        } else if (rand < 0.6) {
+                            // Right third
+                            index = Math.floor((numEntryPoints * 2/3) + Math.random() * (numEntryPoints / 3));
+                        } else {
+                            // Center
+                            index = Math.floor((numEntryPoints / 3) + Math.random() * (numEntryPoints / 3));
+                        }
+                        waveInfo.currentSpawnPoint = validEntryPoints[Math.min(index, numEntryPoints - 1)];
+                    } else {
+                        // Late wave 6: Complete chaos - totally random
+                        const index = Math.floor(Math.random() * numEntryPoints);
+                        waveInfo.currentSpawnPoint = validEntryPoints[index];
+                    }
+                }
+                
+                // Use the group's spawn point
+                startGridPoint = waveInfo.currentSpawnPoint;
+            }
+        } else {
+            // For waves 1-3, use simple random entry point
+            const randomEntryIndex = Math.floor(Math.random() * validEntryPoints.length);
+            startGridPoint = validEntryPoints[randomEntryIndex];
+        }
 
         // Convert grid position to world position
         const startWorldPoint = this.map.gridToWorld(startGridPoint.x, startGridPoint.z);
@@ -644,15 +832,40 @@ export class Game {
         // Apply boss stats if this is a boss
         if (isBoss) {
             // Apply boss stat multipliers
-            enemy.maxHealth *= this.difficultySettings.bossHealthMultiplier;
+            let healthMultiplier = this.difficultySettings.bossHealthMultiplier;
+            let rewardMultiplier = 3; // Base reward multiplier for bosses
+            
+            // Apply additional late stage boss bonus for waves 4-6
+            if (waveNumber >= 4) {
+                healthMultiplier *= this.difficultySettings.lateStageBossBonus;
+                
+                // Each wave gets progressively harder
+                const extraWaveScaling = (waveNumber - 3) * 0.5; // 0.5 for wave 4, 1.0 for wave 5, 1.5 for wave 6
+                healthMultiplier *= (1.0 + extraWaveScaling);
+                
+                // More gold for late game bosses
+                rewardMultiplier = 3 + (waveNumber - 3); // 4x for wave 4, 5x for wave 5, 6x for wave 6
+                
+                // Bigger visual size for late-game bosses
+                if (enemy.mesh) {
+                    // Scale increases with wave number: 1.8x for wave 4, 2.1x for wave 5, 2.4x for wave 6
+                    const lateGameBossScale = 1.5 + ((waveNumber - 3) * 0.3);
+                    enemy.mesh.scale.set(lateGameBossScale, lateGameBossScale, lateGameBossScale);
+                }
+            } else {
+                // Normal boss size for early waves
+                if (enemy.mesh) {
+                    enemy.mesh.scale.set(1.5, 1.5, 1.5);
+                }
+            }
+            
+            // Apply final multipliers
+            enemy.maxHealth *= healthMultiplier;
             enemy.health = enemy.maxHealth;
             enemy.baseSpeed *= this.difficultySettings.bossSpeedMultiplier;
-            enemy.reward *= 3; // Triple gold reward for bosses
+            enemy.reward *= rewardMultiplier;
             
-            // Make boss visually larger
-            if (enemy.mesh) {
-                enemy.mesh.scale.set(1.5, 1.5, 1.5);
-            }
+            console.log(`[BOSS DEBUG] Created boss with health multiplier ${healthMultiplier.toFixed(2)}x, final health: ${enemy.health}`);
         }
         
         // Apply randomness to enemy stats if enabled
@@ -1907,6 +2120,93 @@ export class Game {
         ];
         
         return elements[Math.floor(Math.random() * elements.length)];
+    }
+    
+    showDifficultyIncreaseMessage() {
+        // Create a visual message for difficulty increase
+        if (!this.renderer) return;
+        
+        const message = "DIFFICULTY INCREASED! Enemies are stronger now!";
+        
+        // Create a text canvas with sufficient width to prevent text cutting
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 2048; // Wide canvas to ensure text fits
+        canvas.height = 256;
+        
+        // Ensure canvas is transparent
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw message with warning styling
+        context.font = 'Bold 62px Arial, sans-serif'; // Larger font
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        
+        // Enhanced glow effect - red warning
+        context.shadowColor = '#FF3300';
+        context.shadowBlur = 25;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+        
+        // Draw warning text (red)
+        context.fillStyle = '#FF3300';
+        context.fillText(message, canvas.width / 2, canvas.height / 2);
+        
+        // Add a second layer for stronger effect
+        context.shadowBlur = 15;
+        context.fillStyle = '#FF5500';
+        context.fillText(message, canvas.width / 2, canvas.height / 2);
+        
+        // Create texture and sprite
+        const texture = new THREE.Texture(canvas);
+        texture.needsUpdate = true;
+        
+        const spriteMaterial = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false
+        });
+        
+        const sprite = new THREE.Sprite(spriteMaterial);
+        // Position in center of map
+        sprite.position.set(0, 7, 0); // Higher than completion message
+        sprite.scale.set(20, 5, 1);
+        
+        this.renderer.scene.add(sprite);
+        
+        // Animate with shaking effect and fade out
+        const startTime = performance.now();
+        const duration = 4000; // 4 seconds
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Add shaking effect for warning
+                if (progress < 0.7) {
+                    sprite.position.x = Math.sin(elapsed * 0.02) * 0.3;
+                    
+                    // Pulse size
+                    const scale = 1 + 0.05 * Math.sin(elapsed * 0.01);
+                    sprite.scale.set(20 * scale, 5 * scale, 1);
+                }
+                
+                // Fade out at the end
+                if (progress > 0.7) {
+                    const fadeOutProgress = (progress - 0.7) / 0.3;
+                    spriteMaterial.opacity = 1 - fadeOutProgress;
+                }
+                
+                requestAnimationFrame(animate);
+            } else {
+                // Remove sprite
+                this.renderer.scene.remove(sprite);
+            }
+        };
+        
+        animate();
     }
     
     showWaveCompletionMessage(amount, waveNumber = this.currentWave) {

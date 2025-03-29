@@ -61,11 +61,11 @@ body {
         justify-content: center;
         width: 100%;
     }
-    
+
     #ui-container {
         padding: 5px;
     }
-    
+
     #debug-controls {
         margin-left: 0;
         margin-top: 4px;
@@ -73,11 +73,11 @@ body {
         display: flex;
         justify-content: center;
     }
-    
+
     #next-wave-control {
         margin: 0 4px;
     }
-    
+
     #send-next-wave-button {
         padding: 3px 6px;
         font-size: 0.7rem;
@@ -245,7 +245,7 @@ body {
         border-radius: 5px;
         gap: 2px;
     }
-    
+
     .tower-selection-title {
         display: none; /* Hide title to save space */
     }
@@ -286,7 +286,7 @@ body {
         justify-content: center;
         border-width: 1px;
     }
-    
+
     .tower-option span {
         margin-left: 1px;
         font-size: 0.6rem;
@@ -296,7 +296,7 @@ body {
         border-radius: 2px;
         color: gold;
     }
-    
+
     .tower-option::before {
         padding: 1px 3px;
         margin-right: 2px;
@@ -370,28 +370,28 @@ body {
         justify-content: space-around;
         gap: 5px;
     }
-    
+
     .tower-instructions div {
         font-weight: bold;
         display: inline;
     }
-    
+
     .tower-instructions .mobile-only {
         font-size: 0.65rem;
         color: #aaa;
         width: 100%;
     }
-    
+
     /* Hide desktop-only content on mobile */
     .desktop-only {
         display: none;
     }
-    
+
     /* Show mobile-only content */
     .mobile-only {
         display: block;
     }
-    
+
     /* Make tower selection wrap on mobile */
     #tower-selection {
         flex-wrap: wrap;
@@ -498,6 +498,7 @@ body {
 }
 
 .ai-disclaimer {
+    font-family: monospace;
     margin-top: 20px;
     font-size: 0.9rem;
     color: #aaa;
@@ -638,12 +639,12 @@ body {
         letter-spacing: 1px; /* Tighter letter spacing on mobile */
         text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00; /* Slightly reduced glow */
     }
-    
+
     #start-screen h1, #end-screen h1, #high-scores-screen h1 {
         font-size: 2rem; /* Smaller base font size for the rest of the title */
         margin-bottom: 20px; /* Reduced margin */
     }
-    
+
     #start-screen, #end-screen, #high-scores-screen {
         padding: 25px 15px; /* Reduced padding on mobile */
         width: 95%; /* Slightly wider container */
@@ -753,7 +754,7 @@ button:active {
         gap: 2px;
         overflow: visible !important;
     }
-    
+
     #card-container-wrapper {
         width: 96vw;
         max-width: 96vw;
@@ -830,7 +831,7 @@ button:active {
         margin-bottom: 1px;
         font-weight: bold;
     }
-    
+
     .card-cost {
         top: 3px;
         right: 3px;
@@ -839,13 +840,13 @@ button:active {
         font-size: 11px;
         font-weight: bold;
     }
-    
+
     .card-stats {
         font-size: 9px;
         margin-bottom: 1px;
         font-weight: bold;
     }
-    
+
     .card-element {
         font-size: 9px;
         padding: 1px 3px;
