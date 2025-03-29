@@ -187,6 +187,10 @@ export class Enemy {
         // Update mesh position
         if (this.mesh) {
             this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+            
+            // Update health bar
+            const healthPercent = this.health / this.maxHealth;
+            this.game.renderer.updateHealthBar(this.healthBar, healthPercent);
         }
     }
     

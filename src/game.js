@@ -1144,6 +1144,9 @@ export class Game {
                     waveInfo.enemiesAlive--;
                     waveInfo.enemiesDefeated++;
                 }
+                
+                // Create soul effect when enemy dies
+                this.createSoulEffect(enemy);
 
                 // Remove enemy mesh from scene
                 if (enemy.mesh) {
@@ -2429,6 +2432,60 @@ export class Game {
             } else {
                 // Remove sprite
                 this.renderer.scene.remove(sprite);
+            }
+        };
+        
+        animate();
+    }
+    
+    createSoulEffect(enemy) {
+        // Create a blue soul effect when enemy is defeated
+        if (!this.renderer || !enemy.mesh) return;
+        
+        // Create a simple blue sphere
+        const soulGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+        const soulMaterial = new THREE.MeshBasicMaterial({
+            color: 0x3498db, // Bright blue
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        const soul = new THREE.Mesh(soulGeometry, soulMaterial);
+        
+        // Position at enemy location
+        soul.position.copy(enemy.mesh.position);
+        soul.position.y += 0.5; // Float slightly above
+        
+        this.renderer.scene.add(soul);
+        
+        // Animate soul rising and fading
+        const startTime = performance.now();
+        const duration = 800; // 0.8 seconds - longer animation for visibility
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Rise up
+                soul.position.y += 0.03;
+                
+                // Pulsate slightly
+                const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 2);
+                soul.scale.set(scale, scale, scale);
+                
+                // Fade out near the end
+                if (progress > 0.7) {
+                    const fadeProgress = (progress - 0.7) / 0.3;
+                    soulMaterial.opacity = 0.7 * (1 - fadeProgress);
+                }
+                
+                requestAnimationFrame(animate);
+            } else {
+                // Clean up
+                this.renderer.scene.remove(soul);
+                soulGeometry.dispose();
+                soulMaterial.dispose();
             }
         };
         
