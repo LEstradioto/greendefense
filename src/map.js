@@ -42,7 +42,7 @@ export class Map {
             width: this.gridWidth,
             height: this.gridHeight
         });
-        
+
         // Store for easy access
         this.mapMesh = this.mapGroup;
 
@@ -62,11 +62,11 @@ export class Map {
                 this.pathfindingHelper.toggleNavMeshVisibility();
             }
         });
-        
+
         // Store a copy of the original grid for reset
         this.originalGrid = this.grid.map(row => [...row]);
     }
-    
+
     reset() {
         // Reset the grid dimensions to original values
         if (this.gridWidth !== this.originalGridWidth || this.gridHeight !== this.originalGridHeight) {
@@ -74,10 +74,10 @@ export class Map {
             this.gridWidth = this.originalGridWidth;
             this.gridHeight = this.originalGridHeight;
         }
-        
+
         // Clear the current grid completely
         this.grid = [];
-        
+
         // Reset the grid to its original state
         if (this.originalGrid.length > 0) {
             this.grid = this.originalGrid.map(row => [...row]);
@@ -85,28 +85,28 @@ export class Map {
             // If we don't have an original grid, recreate it
             this.createGridData();
         }
-        
+
         // Rebuild the pathfinding navmesh
         this.pathfindingHelper.buildNavMesh();
-        
+
         // Recreate path waypoints
         this.recreatePathWaypoints();
-        
+
         // We DON'T recreate the map mesh here as that's handled by the renderer.cleanupScene
         // and will be created when the game starts again
     }
-    
+
     recreatePathWaypoints() {
         // Clear existing waypoints
         this.pathWaypoints = [];
-        
+
         // We'll use the same approach as in createPathWaypoints but without async
         // This is a simplified version just for reset purposes
-        
+
         // For simplicity, create a direct line from top to bottom
         const startPoint = this.getStartPoint();
         const endPoint = this.getEndPoint();
-        
+
         // Add these two points as waypoints
         this.pathWaypoints.push(startPoint);
         this.pathWaypoints.push(endPoint);
@@ -116,10 +116,10 @@ export class Map {
         // Make sure we're using the correct dimensions
         const gridWidth = this.gridWidth;
         const gridHeight = this.gridHeight;
-        
+
         // Clear the grid first to prevent duplication
         this.grid = [];
-        
+
         // Initialize grid with all path cells (walkable)
         for (let z = 0; z < gridHeight; z++) {
             const row = [];
@@ -139,7 +139,7 @@ export class Map {
         for (let x = 0; x < gridWidth; x++) {
             this.grid[gridHeight - 1][x] = 1; // Mark as path
         }
-        
+
         // Add restricted rows at the bottom (last 3 rows before the very bottom)
         for (let z = gridHeight - 4; z < gridHeight - 1; z++) {
             for (let x = 0; x < gridWidth; x++) {
@@ -164,7 +164,7 @@ export class Map {
     async createPathWaypoints() {
         // Use the center of the top row as start point
         const startPoint = { x: Math.floor(this.gridWidth / 2), z: 0 };
-        
+
         // Use the center of the bottom row as end point
         const endPoint = { x: Math.floor(this.gridWidth / 2), z: this.gridHeight - 1 };
 
@@ -202,10 +202,10 @@ export class Map {
             const points = this.worldPathWaypoints.map(p => {
                 return new THREE.Vector3(p.x, 0.2, p.z); // Slightly above ground
             });
-    
+
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
             const material = new THREE.LineBasicMaterial({ color: 0xFFFF00, linewidth: 2 });
-    
+
             this.pathVisualization = new THREE.Line(geometry, material);
             this.pathVisualization.visible = this.game.debugMode; // Only visible in debug mode
             this.game.renderer.scene.add(this.pathVisualization);
@@ -224,25 +224,25 @@ export class Map {
     async canPlaceTower(gridX, gridY) {
         // Check if coordinates are within bounds
         if (gridX < 0 || gridX >= this.gridWidth || gridY < 0 || gridY >= this.gridHeight) {
-            console.log('Tower placement failed: Out of bounds');
+            // console.log('Tower placement failed: Out of bounds');
             return false;
         }
 
         // Check if cell is empty (not path, obstacle, or already occupied)
         if (this.grid[gridY][gridX] !== 1) {
-            console.log('Tower placement failed: Cell not empty', this.grid[gridY][gridX]);
+            // console.log('Tower placement failed: Cell not empty', this.grid[gridY][gridX]);
             return false;
         }
-        
+
         // Check if in entry or exit rows
         if (gridY === 0 || gridY === this.gridHeight - 1) {
-            console.log('Tower placement failed: Cannot place towers in entry/exit areas');
+            // console.log('Tower placement failed: Cannot place towers in entry/exit areas');
             return false;
         }
-        
+
         // Check if in restricted area (last 3 rows before the bottom)
         if (gridY >= this.gridHeight - 4 && gridY < this.gridHeight - 1) {
-            console.log('Tower placement failed: Cannot place towers in the restricted area (end zone)');
+            // console.log('Tower placement failed: Cannot place towers in the restricted area (end zone)');
             return false;
         }
 
@@ -257,7 +257,7 @@ export class Map {
             const exitPoint = this.getEndPoint();
 
             if (!entryPoint || !exitPoint) {
-                console.log('Tower placement failed: No entry or exit point found');
+                // console.log('Tower placement failed: No entry or exit point found');
                 return false;
             }
 
@@ -277,7 +277,7 @@ export class Map {
             });
 
             if (!pathExists) {
-                console.log('Tower placement failed: No valid path from entry to exit');
+                // console.log('Tower placement failed: No valid path from entry to exit');
                 return false;
             }
 
@@ -309,7 +309,7 @@ export class Map {
             });
 
             if (!pathExists) {
-                console.log('Tower placement failed: No valid path from entry to exit');
+                // console.log('Tower placement failed: No valid path from entry to exit');
                 return false;
             }
 
@@ -342,7 +342,7 @@ export class Map {
             // Make sure enemy position is valid for pathfinding
             if (enemyGridPos.x < 0 || enemyGridPos.x >= this.gridWidth ||
                 enemyGridPos.y < 0 || enemyGridPos.y >= this.gridHeight) {
-                console.log('Tower placement: Enemy position out of bounds', enemyGridPos);
+                // console.log('Tower placement: Enemy position out of bounds', enemyGridPos);
                 continue; // Skip this enemy
             }
 
@@ -357,7 +357,7 @@ export class Map {
             });
 
             if (!pathExists) {
-                console.log('Tower placement failed: Would block enemy path to exit');
+                // console.log('Tower placement failed: Would block enemy path to exit');
                 allEnemiesHavePaths = false;
                 break;
             }
@@ -375,6 +375,12 @@ export class Map {
 
         // Force all enemies to recalculate their paths
         if (this.game.enemies) {
+            // Clear the path cache since the grid has changed
+            if (this.game.cachedPaths && typeof this.game.cachedPaths.clear === 'function') {
+                this.game.cachedPaths.clear();
+            }
+            
+            // Only update enemies that need new paths
             for (const enemy of this.game.enemies) {
                 if (!enemy.reachedEnd) {
                     enemy.recalculatePath();

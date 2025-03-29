@@ -27,11 +27,11 @@ export class Tower {
         this.empowered = false;
         this.empowermentMultiplier = 1;
         this.empowermentEndTime = 0;
-        
+
         // Element effects tracker
         this.appliedEffects = [];
-        
-        // Tower effect state 
+
+        // Tower effect state
         this.shield = 0; // Damage reduction percentage (0.5 = 50% reduction)
         this.hasteMultiplier = 1.0; // Attack speed multiplier (1.5 = 50% faster)
 
@@ -48,7 +48,7 @@ export class Tower {
         );
 
         // For debugging
-        console.log("Tower created at:", position, "with height:", this.height, "element:", this.element);
+        // console.log("Tower created at:", position, "with height:", this.height, "element:", this.element);
     }
 
     setStats() {
@@ -94,11 +94,11 @@ export class Tower {
                 this.areaOfEffect = false;
                 this.specialAbility = null;
         }
-        
+
         // Set additional properties based on type
         this.setAdditionalStats();
     }
-    
+
     setAdditionalStats() {
         // Set visual and projectile properties based on tower type
         switch (this.type) {
@@ -120,7 +120,7 @@ export class Tower {
                 this.areaOfEffect = true;
                 this.aoeRadius = 1.2;
                 break;
-                
+
             // Add cases for elemental tower types
             case 'fire_basic':
             case 'fire_advanced':
@@ -130,7 +130,7 @@ export class Tower {
                 this.aoeRadius = (this.type === 'fire_advanced') ? 1.0 : 0;
                 this.element = ElementTypes.FIRE;
                 break;
-                
+
             case 'water_basic':
             case 'water_advanced':
                 this.height = 0.85;
@@ -138,7 +138,7 @@ export class Tower {
                 this.areaOfEffect = false;
                 this.element = ElementTypes.WATER;
                 break;
-                
+
             case 'earth_basic':
             case 'earth_advanced':
                 this.height = 1.1;
@@ -146,7 +146,7 @@ export class Tower {
                 this.areaOfEffect = false;
                 this.element = ElementTypes.EARTH;
                 break;
-                
+
             case 'air_basic':
             case 'air_advanced':
                 this.height = 0.75;
@@ -154,7 +154,7 @@ export class Tower {
                 this.areaOfEffect = false;
                 this.element = ElementTypes.AIR;
                 break;
-                
+
             case 'shadow_basic':
             case 'shadow_advanced':
                 this.height = 0.8;
@@ -176,7 +176,7 @@ export class Tower {
             this.empowered = false;
             this.empowermentMultiplier = 1;
         }
-        
+
         // Update applied effects
         this.updateEffects(deltaTime);
 
@@ -184,7 +184,7 @@ export class Tower {
         if (this.mesh.userData.rangeIndicator) {
             this.mesh.userData.rangeIndicator.visible = this.game.debugMode;
         }
-        
+
         // Always update nose rotation if an enemy is in range, regardless of fire state
         if (this.mesh && this.mesh.userData.nose) {
             // Find the closest enemy in range
@@ -194,29 +194,29 @@ export class Tower {
             }
         }
     }
-    
+
     updateEffects(deltaTime) {
         // Update duration of applied effects and remove expired ones
         for (let i = this.appliedEffects.length - 1; i >= 0; i--) {
             const effect = this.appliedEffects[i];
             effect.remainingDuration -= deltaTime;
-            
+
             if (effect.remainingDuration <= 0) {
                 // Remove effect
                 switch (effect.type) {
                     case 'shield':
                         this.shield = 0;
                         break;
-                        
+
                     case 'haste':
                         this.hasteMultiplier = 1.0;
                         break;
                 }
-                
+
                 this.appliedEffects.splice(i, 1);
             }
         }
-        
+
         // Process any active effects
         this.processEffects(deltaTime);
     }
@@ -227,22 +227,22 @@ export class Tower {
 
         return now - this.lastFireTime >= fireInterval;
     }
-    
+
     getModifiedFireRate() {
         let rate = this.fireRate * this.empowermentMultiplier;
-        
+
         // Apply effect modifiers
         this.appliedEffects.forEach(effect => {
             if (effect.type === 'attackSpeed') {
                 rate *= effect.value;
             }
         });
-        
+
         // Apply haste effect
         if (this.hasteMultiplier > 1.0) {
             rate *= this.hasteMultiplier;
         }
-        
+
         return rate;
     }
 
@@ -274,34 +274,34 @@ export class Tower {
                 }
             }, 150); // Small delay between shots
         }
-        
+
         // Apply element-specific effects
         this.applyElementalSpecialEffects(target);
     }
-    
+
     rotateTowardTarget(target) {
         // Check if this tower has a nose component to rotate
         if (this.mesh && this.mesh.userData.nose) {
             const nose = this.mesh.userData.nose;
-            
+
             // Remove all debug logs once working
             //console.log(`Tower type: ${this.type}, rotating nose`);
-            
+
             // Calculate angle to target
             const dx = target.position.x - this.position.x;
             const dz = target.position.z - this.position.z;
-            
+
             // Use correct angle calculation for Three.js coordinate system
             const targetAngle = Math.atan2(dx, dz);
-            
+
             // Apply rotation directly (simple approach)
             nose.rotation.y = targetAngle;
-            
+
             // Store the target on the tower for debugging
             this.lastTarget = target;
         } else {
             console.warn(`Tower rotation failed - no nose for ${this.type} tower`);
-            
+
             // Debug structure of mesh to locate nose
             if (this.mesh) {
                 console.log(`Tower mesh structure:`, JSON.stringify({
@@ -309,7 +309,7 @@ export class Tower {
                     hasUserData: !!this.mesh.userData,
                     userDataKeys: Object.keys(this.mesh.userData || {})
                 }));
-                
+
                 // Traverse mesh looking for nose
                 let foundNose = false;
                 this.mesh.traverse(obj => {
@@ -319,14 +319,14 @@ export class Tower {
                         this.mesh.userData.nose = obj.userData.nose;
                     }
                 });
-                
+
                 if (!foundNose) {
                     console.error(`No nose found in tower mesh hierarchy`);
                 }
             }
         }
     }
-    
+
     applyElementalSpecialEffects(target) {
         // Check for element-specific special effects
         switch (this.element) {
@@ -336,25 +336,25 @@ export class Tower {
                     target.applyStatusEffect('burn', ElementEffects[ElementTypes.FIRE]);
                 }
                 break;
-                
+
             case ElementTypes.WATER:
                 // Water towers have a chance to apply slow effect
                 if (Math.random() < 0.3) {
                     target.applyStatusEffect('slow', ElementEffects[ElementTypes.WATER]);
                 }
                 break;
-                
+
             case ElementTypes.EARTH:
                 // Earth towers provide armor buff to nearby towers
                 if (Math.random() < 0.15) {
                     this.applyEarthArmorBuff();
                 }
                 break;
-                
+
             case ElementTypes.AIR:
                 // Air towers have a chance for critical hits (handled in calculateDamage)
                 break;
-                
+
             case ElementTypes.SHADOW:
                 // Shadow towers have a chance to apply weaken effect
                 if (Math.random() < 0.2) {
@@ -363,12 +363,12 @@ export class Tower {
                 break;
         }
     }
-    
+
     applyEarthArmorBuff() {
         // Find nearby towers and buff them
         const earthEffect = ElementEffects[ElementTypes.EARTH];
         const buffRadius = earthEffect.radius;
-        
+
         for (const tower of this.game.towers) {
             if (tower !== this) {
                 const distance = this.game.calculateDistance(this.position, tower.position);
@@ -379,7 +379,7 @@ export class Tower {
                         value: 1 - earthEffect.damageReduction, // Convert to damage multiplier
                         remainingDuration: earthEffect.duration
                     });
-                    
+
                     // Visual effect could be added here
                 }
             }
@@ -387,6 +387,12 @@ export class Tower {
     }
 
     createProjectile(target) {
+        // Skip creating projectile if too many exist and FPS is low
+        if (this.game.projectiles.length > this.game.maxActiveProjectiles && 
+            this.game.fpsCounter && this.game.fpsCounter.value < 30) {
+            return; // Skip firing during performance issues
+        }
+
         // Calculate projectile starting position
         const startPosition = {
             x: this.position.x,
@@ -397,35 +403,53 @@ export class Tower {
         // Calculate applied damage with elemental advantage
         const damage = this.calculateDamage(target);
 
-        // Create projectile
-        const projectile = new Projectile(
-            this.game,
-            this.projectileType,
-            startPosition,
-            target,
-            damage,
-            this.areaOfEffect ? this.aoeRadius : 0,
-            this.element
-        );
+        // Try to get projectile from pool if available
+        let projectile;
+        
+        // Check if the fromPool static method exists
+        if (this.game.projectilePool && this.game.projectilePool.length > 0 && 
+            typeof Projectile.fromPool === 'function') {
+            
+            projectile = Projectile.fromPool(
+                this.game,
+                this.projectileType,
+                startPosition,
+                target,
+                damage,
+                this.areaOfEffect ? this.aoeRadius : 0,
+                this.element
+            );
+        } else {
+            // Create new projectile if no pool or method
+            projectile = new Projectile(
+                this.game,
+                this.projectileType,
+                startPosition,
+                target,
+                damage,
+                this.areaOfEffect ? this.aoeRadius : 0,
+                this.element
+            );
+        }
 
         this.game.projectiles.push(projectile);
     }
-    
+
     calculateDamage(target) {
         let damage = this.damage * this.empowermentMultiplier;
-        
+
         // Apply game difficulty multiplier
         if (this.game.difficultySettings) {
             damage *= this.game.difficultySettings.towerDamageMultiplier;
         }
-        
+
         // Apply effect modifiers
         this.appliedEffects.forEach(effect => {
             if (effect.type === 'damage') {
                 damage *= effect.value;
             }
         });
-        
+
         // Apply armor effects if target has any
         if (target.appliedEffects) {
             target.appliedEffects.forEach(effect => {
@@ -434,12 +458,12 @@ export class Tower {
                 }
             });
         }
-        
+
         // Apply elemental advantage modifier
         if (target.element && this.element) {
             const advantageMultiplier = ElementalAdvantages[this.element][target.element] || 1.0;
             damage *= advantageMultiplier;
-            
+
             // Show visual feedback for advantage
             if (advantageMultiplier > 1.0) {
                 // Could add super effective visual
@@ -447,13 +471,13 @@ export class Tower {
                 // Could add not very effective visual
             }
         }
-        
+
         // Air towers have a chance for critical hits
         if (this.element === ElementTypes.AIR && Math.random() < 0.15) {
             damage *= 2; // Critical hit
             // Could add critical hit visual
         }
-        
+
         return damage;
     }
 
@@ -467,7 +491,7 @@ export class Tower {
             // Could add visual empowerment effect here if needed
         }
     }
-    
+
     applyEffect(effectType, value, duration) {
         // Add effect to tower
         this.appliedEffects.push({
@@ -475,44 +499,44 @@ export class Tower {
             value: value,
             remainingDuration: duration
         });
-        
+
         // Apply effect immediately
         switch (effectType) {
             case 'shield':
                 // Damage reduction
                 this.shield = value; // 0.5 = 50% damage reduction
                 break;
-            
+
             case 'haste':
                 // Attack speed boost
                 this.hasteMultiplier = value; // 1.5 = 50% faster attacks
                 break;
-                
+
             // Add more effect types as needed
         }
     }
-    
+
     // Process active effects (call in update method)
     processEffects(deltaTime) {
         // Process each effect and remove expired ones
         for (let i = this.appliedEffects.length - 1; i >= 0; i--) {
             const effect = this.appliedEffects[i];
-            
+
             // Decrease duration
             effect.remainingDuration -= deltaTime;
-            
+
             if (effect.remainingDuration <= 0) {
                 // Effect expired, remove it
                 switch (effect.type) {
                     case 'shield':
                         this.shield = 0;
                         break;
-                        
+
                     case 'haste':
                         this.hasteMultiplier = 1.0;
                         break;
                 }
-                
+
                 this.appliedEffects.splice(i, 1);
             }
         }

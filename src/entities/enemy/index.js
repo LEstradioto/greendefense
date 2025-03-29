@@ -32,7 +32,7 @@ export class Enemy {
 
         // Movement and effects
         this.speed = this.baseSpeed;
-        
+
         // Status effects
         this.statusEffects = [];
 
@@ -49,12 +49,10 @@ export class Enemy {
     }
 
     setStats() {
-        // Base stats depending on enemy type
-        console.log("[ENEMY DEBUG] Setting stats for enemy type:", this.type);
-        
+
         // Ensure type is a string before doing string operations
         const enemyType = String(this.type);
-        
+
         switch (enemyType) {
             case 'simple':
                 this.health = 100;
@@ -79,7 +77,7 @@ export class Enemy {
                 this.reward = 50;
                 this.element = ElementTypes.WATER;
                 break;
-                
+
             // Elemental enemy types
             case 'fire_imp':
                 this.health = 80;
@@ -88,7 +86,7 @@ export class Enemy {
                 this.reward = 15;
                 this.element = ElementTypes.FIRE;
                 break;
-                
+
             case 'water_elemental':
                 this.health = 150;
                 this.maxHealth = 150;
@@ -96,7 +94,7 @@ export class Enemy {
                 this.reward = 20;
                 this.element = ElementTypes.WATER;
                 break;
-                
+
             case 'earth_golem':
                 this.health = 300;
                 this.maxHealth = 300;
@@ -104,7 +102,7 @@ export class Enemy {
                 this.reward = 30;
                 this.element = ElementTypes.EARTH;
                 break;
-                
+
             case 'air_wisp':
                 this.health = 50;
                 this.maxHealth = 50;
@@ -112,7 +110,7 @@ export class Enemy {
                 this.reward = 25;
                 this.element = ElementTypes.AIR;
                 break;
-                
+
             case 'shadow_wraith':
                 this.health = 200;
                 this.maxHealth = 200;
@@ -128,35 +126,35 @@ export class Enemy {
                 this.reward = 10;
                 this.element = ElementTypes.NEUTRAL;
         }
-        
+
         // Apply per-wave and global difficulty settings to scale enemy stats
-        if (this.game.waveSettings && this.game.currentWave > 0 && 
+        if (this.game.waveSettings && this.game.currentWave > 0 &&
             this.game.currentWave <= this.game.waveSettings.length) {
-            
+
             // Apply per-wave multipliers
             const waveSettings = this.game.waveSettings[this.game.currentWave - 1];
             this.health *= waveSettings.enemyHealth;
             this.maxHealth *= waveSettings.enemyHealth;
             this.baseSpeed *= waveSettings.enemySpeed;
         }
-        
+
         // Apply global difficulty settings
         if (this.game.difficultySettings) {
             // Apply health multiplier
             this.health *= this.game.difficultySettings.enemyHealthMultiplier;
             this.maxHealth *= this.game.difficultySettings.enemyHealthMultiplier;
-            
+
             // Apply speed multiplier
             this.baseSpeed *= this.game.difficultySettings.enemySpeedMultiplier;
-            
+
             // REMOVED gold multiplier from here - it will be applied when enemy is defeated
         }
-        
+
         // Final sanity check to ensure reward is valid no matter what
         if (isNaN(this.reward) || !isFinite(this.reward) || this.reward <= 0) {
             console.warn("Invalid enemy reward detected, resetting to default value");
-            this.reward = this.type.includes('golem') ? 50 : 
-                         this.type.includes('pirate') ? 25 : 
+            this.reward = this.type.includes('golem') ? 50 :
+                         this.type.includes('pirate') ? 25 :
                          this.type.includes('elephant') ? 15 : 10; // Default fallback values by type
         }
     }
@@ -164,7 +162,7 @@ export class Enemy {
     update(deltaTime) {
         // Check if reached the end
         if (this.reachedEnd) return;
-        
+
         // Update status effects
         this.updateStatusEffects(deltaTime);
 
@@ -181,35 +179,34 @@ export class Enemy {
         // Check if at the bottom edge of the map (reached end)
         if (!this.reachedEnd && this.position.z > (this.game.map.gridHeight / 2) - 1.5) {
             this.reachedEnd = true;
-            console.log("Enemy reached the end!");
         }
 
         // Update mesh position
         if (this.mesh) {
             this.mesh.position.set(this.position.x, this.position.y, this.position.z);
-            
+
             // Update health bar
             const healthPercent = this.health / this.maxHealth;
             this.game.renderer.updateHealthBar(this.healthBar, healthPercent);
         }
     }
-    
+
     // Simplified update method for performance optimization with distant enemies
     updateSimple(deltaTime) {
         // Check if reached the end
         if (this.reachedEnd) return;
-        
+
         // Skip status effects for better performance
-        
+
         // Very simplified movement - just move toward next waypoint without fancy calculations
         if (this.path && this.path.length > 0 && this.currentPathIndex < this.path.length) {
             const target = this.path[this.currentPathIndex];
-            
+
             // Direct movement toward target
             const dx = target.x - this.position.x;
             const dz = target.y - this.position.z;
             const dist = Math.sqrt(dx*dx + dz*dz);
-            
+
             if (dist > 0.1) {
                 // Move directly toward target
                 this.position.x += (dx / dist) * this.speed * deltaTime;
@@ -234,16 +231,22 @@ export class Enemy {
             this.game.renderer.updateHealthBar(this.healthBar, healthPercent);
         }
     }
-    
+
     updateStatusEffects(deltaTime) {
+        // Skip status effect processing if FPS is low for performance
+        if (this.game.fpsCounter && this.game.fpsCounter.value < 30 && Math.random() < 0.7) {
+            // Process only 30% of the time at low FPS to improve performance
+            return;
+        }
+        
         // Process all active status effects
         for (let i = this.statusEffects.length - 1; i >= 0; i--) {
             const effect = this.statusEffects[i];
-            
+
             // Reduce remaining duration
             effect.remainingDuration -= deltaTime;
-            
-            // Process effect based on type
+
+            // Process effect based on type - optimize processing
             switch (effect.type) {
                 case 'burn':
                     // Apply periodic damage from burn
@@ -252,21 +255,23 @@ export class Enemy {
                         this.takeDamage(effect.damagePerTick, true); // true = from DOT effect
                         effect.timeSinceLastTick = 0;
                         
-                        // Create burn visual
-                        this.createBurnEffect();
+                        // Skip visual effects when FPS is low
+                        if (!(this.game.fpsCounter && this.game.fpsCounter.value < 45)) {
+                            this.createBurnEffect();
+                        }
                     }
                     break;
-                    
+
                 case 'slow':
                     // Speed reduction is applied when calculating movement speed
                     // Visual effect is handled when the effect is applied
                     break;
-                    
+
                 case 'weaken':
                     // Damage reduction is applied when taking damage
                     break;
             }
-            
+
             // Remove expired effects
             if (effect.remainingDuration <= 0) {
                 // Handle cleanup when effect expires
@@ -277,27 +282,27 @@ export class Enemy {
                         delete this.mesh.userData.slowEffect;
                     }
                 }
-                
+
                 // Remove the effect
                 this.statusEffects.splice(i, 1);
             }
         }
-        
+
         // Recalculate current speed after all effects
         this.calculateCurrentSpeed();
     }
-    
+
     calculateCurrentSpeed() {
         // Start with base speed
         let currentSpeed = this.baseSpeed;
-        
+
         // Apply all slow effects (they stack multiplicatively)
         for (const effect of this.statusEffects) {
             if (effect.type === 'slow') {
                 currentSpeed *= effect.speedModifier;
             }
         }
-        
+
         // Set the current speed
         this.speed = currentSpeed;
     }
@@ -368,12 +373,12 @@ export class Enemy {
         this.position.x = validPosition.x;
         this.position.y = validPosition.y;
         this.position.z = validPosition.z;
-        
+
         // Rotate enemy to face movement direction (for diagonal movement)
         if (this.mesh && (direction.x !== 0 || direction.z !== 0)) {
             // Calculate angle from direction vector (in radians)
             const angle = Math.atan2(direction.x, direction.z);
-            
+
             // Set the y-rotation of the mesh to face the movement direction
             this.mesh.rotation.y = angle;
         }
@@ -400,14 +405,14 @@ export class Enemy {
     takeDamage(amount, isFromEffect = false) {
         // Apply damage reduction from weaken effect
         let actualDamage = amount;
-        
+
         // Apply damage modifiers from status effects
         for (const effect of this.statusEffects) {
             if (effect.type === 'weaken') {
                 actualDamage *= effect.damageModifier;
             }
         }
-        
+
         // Apply damage
         this.health -= actualDamage;
 
@@ -417,18 +422,18 @@ export class Enemy {
         // Create hit effect if not from a DOT effect (to avoid visual spam)
         if (!isFromEffect) {
             this.createHitEffect(actualDamage);
-            
+
             // Play enemy hit sound effect
             if (window.playSound) {
                 window.playSound('enemyHit');
             }
         }
     }
-    
+
     applyStatusEffect(effectType, effectParams) {
         // Check if this enemy already has this effect type
         const existingEffectIndex = this.statusEffects.findIndex(effect => effect.type === effectType);
-        
+
         if (existingEffectIndex !== -1) {
             // If effect exists, just refresh duration
             this.statusEffects[existingEffectIndex].remainingDuration = Math.max(
@@ -442,26 +447,26 @@ export class Enemy {
                 remainingDuration: effectParams.duration,
                 ...effectParams
             };
-            
+
             // Add additional properties based on effect type
             switch (effectType) {
                 case 'burn':
                     newEffect.timeSinceLastTick = 0;
                     this.createBurnEffectVisual();
                     break;
-                    
+
                 case 'slow':
                     this.createSlowEffectVisual(effectParams.duration);
                     break;
-                    
+
                 case 'weaken':
                     this.createWeakenEffectVisual(effectParams.duration);
                     break;
             }
-            
+
             this.statusEffects.push(newEffect);
         }
-        
+
         // Update speed immediately if it's a slow effect
         if (effectType === 'slow') {
             this.calculateCurrentSpeed();
@@ -476,24 +481,75 @@ export class Enemy {
 
         // Skip recalculation if enemy has reached the end
         if (this.reachedEnd) return;
+        
+        // Track pathfinding calls for debugging
+        if (this.game._pathfindingCalls !== undefined) {
+            this.game._pathfindingCalls++;
+        }
+        
+        // Check for a cached path first (based on start and end positions)
+        const startX = Math.round(this.position.x);
+        const startZ = Math.round(this.position.z);
+        const endX = Math.round(this.targetPosition.x);
+        const endZ = Math.round(this.targetPosition.z);
+        
+        const pathKey = `${startX},${startZ}-${endX},${endZ}`;
+        
+        // Make sure we're using a proper JavaScript Map object and not a regular object
+        if (this.game.cachedPaths && typeof this.game.cachedPaths.has === 'function' && this.game.cachedPaths.has(pathKey)) {
+            // Use cached path
+            this.path = [...this.game.cachedPaths.get(pathKey)];
+            return;
+        }
+        
+        // Check if too many pathfinding calls recently - use simpler path if FPS is low
+        if (this.game.fpsCounter && this.game.fpsCounter.value < 30) {
+            // Simple direct path for performance
+            this.path = [
+                { x: this.position.x, y: this.position.z },
+                { x: endX, y: endZ }
+            ];
+            return;
+        }
 
         // Calculate a new path
         await this.calculatePath(0); // Start with recursion depth 0
+        
+        // Cache the path for reuse if we have a valid Map object
+        if (this.path && this.path.length > 0 && this.game.cachedPaths && typeof this.game.cachedPaths.set === 'function') {
+            try {
+                // Store path copy in cache
+                this.game.cachedPaths.set(pathKey, [...this.path]);
+                
+                // Limit cache size to prevent memory issues
+                if (this.game.cachedPaths.size > 100 && typeof this.game.cachedPaths.keys === 'function') {
+                    // Remove oldest entry (first key)
+                    const keysIterator = this.game.cachedPaths.keys();
+                    const firstItem = keysIterator.next();
+                    if (firstItem && !firstItem.done && firstItem.value) {
+                        this.game.cachedPaths.delete(firstItem.value);
+                    }
+                }
+            } catch (e) {
+                // If any error occurs with the cache, just ignore it
+                // This is only an optimization, not critical functionality
+            }
+        }
     }
 
     createHitEffect(damageAmount) {
         // Completely disable hit effects for maximum performance
         // Just return immediately without creating any visual effects
         return;
-        
+
         /* All hit effect code removed for performance */
-        
+
     }
-    
+
     createBurnEffectVisual() {
         // This creates the persistent burn effect visual when the status is first applied
         if (!this.mesh) return;
-        
+
         // Create a fire aura effect if it doesn't exist
         if (!this.mesh.userData.burnEffect) {
             const burnGeometry = new THREE.SphereGeometry(0.4, 16, 16);
@@ -502,27 +558,27 @@ export class Enemy {
                 transparent: true,
                 opacity: 0.3
             });
-            
+
             const burnEffect = new THREE.Mesh(burnGeometry, burnMaterial);
             this.mesh.add(burnEffect);
-            
+
             // Store reference
             this.mesh.userData.burnEffect = burnEffect;
-            
+
             // Animate pulsing
             let startTime = performance.now();
-            
+
             const animatePulse = () => {
                 if (!this.mesh || !this.mesh.userData.burnEffect) return;
-                
+
                 const time = performance.now() - startTime;
                 const scale = 1 + 0.2 * Math.sin(time * 0.005);
-                
+
                 burnEffect.scale.set(scale, scale, scale);
-                
+
                 // Check if the burn effect is still active
                 const hasBurnEffect = this.statusEffects.some(effect => effect.type === 'burn');
-                
+
                 if (hasBurnEffect) {
                     requestAnimationFrame(animatePulse);
                 } else {
@@ -531,19 +587,19 @@ export class Enemy {
                     delete this.mesh.userData.burnEffect;
                 }
             };
-            
+
             animatePulse();
         }
     }
-    
+
     createSlowEffectVisual(duration) {
         if (!this.mesh) return;
-        
+
         // Remove existing slow effect if any
         if (this.mesh.userData.slowEffect) {
             this.mesh.remove(this.mesh.userData.slowEffect);
         }
-        
+
         // Create a blue aura to indicate slow effect
         const slowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
         const slowMaterial = new THREE.MeshBasicMaterial({
@@ -552,17 +608,17 @@ export class Enemy {
             opacity: 0.3,
             wireframe: true
         });
-        
+
         const slowEffect = new THREE.Mesh(slowGeometry, slowMaterial);
         this.mesh.add(slowEffect);
-        
+
         // Store reference
         this.mesh.userData.slowEffect = slowEffect;
     }
-    
+
     createWeakenEffectVisual(duration) {
         if (!this.mesh) return;
-        
+
         // Create a purple aura to indicate weaken effect
         const weakenGeometry = new THREE.SphereGeometry(0.45, 16, 16);
         const weakenMaterial = new THREE.MeshBasicMaterial({
@@ -570,10 +626,10 @@ export class Enemy {
             transparent: true,
             opacity: 0.3
         });
-        
+
         const weakenEffect = new THREE.Mesh(weakenGeometry, weakenMaterial);
         this.mesh.add(weakenEffect);
-        
+
         // Remove effect after duration
         setTimeout(() => {
             if (this.mesh) {
@@ -604,10 +660,21 @@ export class Enemy {
     }
 
     async calculatePath(recursionDepth = 0) {
+        // Track pathfinding calls for debugging
+        if (this.game._pathfindingCalls !== undefined) {
+            this.game._pathfindingCalls++;
+        }
+        
+        // Skip expensive pathfinding if FPS is low
+        if (this.game.fpsCounter && this.game.fpsCounter.value < 25) {
+            // Use simpler path calculation during performance issues
+            this.findFallbackPath();
+            return;
+        }
+        
         // Prevent stack overflow with a recursion limit
         const MAX_RECURSION_DEPTH = 3;
         if (recursionDepth >= MAX_RECURSION_DEPTH) {
-            console.log("Max recursion depth reached in path calculation, giving up");
             // Assign a direct path to the nearest exit as a fallback
             this.findFallbackPath();
             return;
@@ -630,7 +697,8 @@ export class Enemy {
             const pathfindingTimeout = setTimeout(() => {
                 if (!pathFound) {
                     this.isPathfinding = false;
-                    console.log("Pathfinding timed out for enemy");
+                    // Pathfinding timed out, use direct path
+                    this.findFallbackPath();
                 }
             }, 3000); // 3 seconds timeout
 
@@ -646,11 +714,17 @@ export class Enemy {
 
             // If no path is found, try a different exit point
             if (!path || path.length === 0) {
-                console.log("No path found for enemy, trying alternate exit");
-                this.targetPosition = this.findExitPoint();
-                this.isPathfinding = false;
-                // Call again with increased recursion depth
-                return this.calculatePath(recursionDepth + 1);
+                // No path found, try alternate exit or use fallback
+                if (this.game.fpsCounter && this.game.fpsCounter.value < 30) {
+                    // Skip retries during low performance, use direct path
+                    this.findFallbackPath();
+                } else {
+                    // Try a different exit point
+                    this.targetPosition = this.findExitPoint();
+                    this.isPathfinding = false;
+                    // Call again with increased recursion depth
+                    return this.calculatePath(recursionDepth + 1);
+                }
             }
 
             // Convert grid positions to world positions

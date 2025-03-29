@@ -36,6 +36,57 @@ export class Projectile {
         }
     }
 
+    // Reset method for object pooling
+    reset() {
+        this.hit = false;
+        this.timeAlive = 0;
+        // Don't reset mesh as we'll reuse it
+    }
+
+    // Static method to get a projectile from pool or create new
+    static fromPool(game, type, startPosition, target, damage, areaOfEffect = 0, element = ElementTypes.NEUTRAL) {
+        // TEMPORARY: Disable pooling entirely to fix visibility issues
+        // Creating a fresh projectile every time is more reliable
+        return new Projectile(game, type, startPosition, target, damage, areaOfEffect, element);
+
+        /* Original pooling code disabled for debugging
+        // Check if there's a projectile of the right type in the pool
+        if (game.projectilePool && game.projectilePool.length > 0) {
+            for (let i = 0; i < game.projectilePool.length; i++) {
+                if (game.projectilePool[i].type === type) {
+                    // Found a matching projectile, reuse it
+                    const projectile = game.projectilePool.splice(i, 1)[0];
+
+                    // Reset and update properties
+                    projectile.position = { ...startPosition };
+                    projectile.target = target;
+                    projectile.damage = damage;
+                    projectile.areaOfEffect = areaOfEffect;
+                    projectile.element = element;
+                    projectile.timeAlive = 0;
+                    projectile.hit = false;
+
+                    // Update mesh position
+                    if (projectile.mesh) {
+                        projectile.mesh.position.set(startPosition.x, startPosition.y, startPosition.z);
+                    }
+
+                    // Recalculate direction to new target
+                    projectile.calculateDirection();
+
+                    // Re-rotate to face new direction
+                    projectile.rotateToDirection();
+
+                    return projectile;
+                }
+            }
+        }
+
+        // No matching projectile in pool, create new
+        return new Projectile(game, type, startPosition, target, damage, areaOfEffect, element);
+        */
+    }
+
     setStats() {
         // Set stats based on projectile type and element
         switch (this.type) {
@@ -108,20 +159,8 @@ export class Projectile {
     }
 
     rotateToDirection() {
-        if (!this.mesh) return;
-
-        // Create a quaternion rotation from the direction vector
-        const dirVector = new THREE.Vector3(this.direction.x, this.direction.y, this.direction.z);
-        const quaternion = new THREE.Quaternion();
-
-        // Default forward orientation for a cone is along the Y axis
-        const defaultForward = new THREE.Vector3(0, 1, 0);
-
-        // First, figure out the rotation from default forward to the target direction
-        quaternion.setFromUnitVectors(defaultForward, dirVector.normalize());
-
-        // Apply the quaternion to the mesh
-        this.mesh.quaternion.copy(quaternion);
+        // Skip rotation for simple projectiles - rotation code caused issues
+        // This also improves performance
     }
 
     // Check if projectile is out of map bounds
@@ -145,6 +184,14 @@ export class Projectile {
     }
 
     update(deltaTime) {
+        // IMPORTANT DEBUG: Mark each update call to track frequency
+        this._lastUpdateTime = performance.now();
+
+        // DEBUG: Log mesh visibility status once every second
+        if (!this._lastDebugTime || performance.now() - this._lastDebugTime > 1000) {
+            this._lastDebugTime = performance.now();
+        }
+
         if (this.hit) return;
 
         // Update time alive
@@ -156,23 +203,29 @@ export class Projectile {
             return;
         }
 
-        // Move projectile
-        this.position.x += this.direction.x * this.speed * deltaTime;
-        this.position.y += this.direction.y * this.speed * deltaTime;
-        this.position.z += this.direction.z * this.speed * deltaTime;
+        // Move projectile faster for better visibility
+        const speedMultiplier = 1.0; // Normal speed
+        this.position.x += this.direction.x * this.speed * speedMultiplier * deltaTime;
+        this.position.y += this.direction.y * this.speed * speedMultiplier * deltaTime;
+        this.position.z += this.direction.z * this.speed * speedMultiplier * deltaTime;
 
-        // Update mesh position
+        // ALWAYS update mesh position to make sure it's visible
         if (this.mesh) {
             this.mesh.position.set(this.position.x, this.position.y, this.position.z);
 
-            // Add rotations for certain projectiles
-            if (this.type === 'cannon') {
-                this.mesh.rotation.x += 5 * deltaTime;
-                this.mesh.rotation.z += 5 * deltaTime;
-            } else if (this.type === 'air') {
-                // Air projectiles spin fast
-                this.mesh.rotation.y += 10 * deltaTime;
-            }
+            // Add more aggressive rotation to make it MUCH more noticeable
+            this.mesh.rotation.x += 5 * deltaTime;
+            this.mesh.rotation.y += 7 * deltaTime;
+            this.mesh.rotation.z += 3 * deltaTime;
+
+            // Alternative: Make it grow/shrink slightly for better visibility
+            const pulseScale = 1 + 0.3 * Math.sin(this.timeAlive * 10);
+            this.mesh.scale.set(pulseScale, pulseScale, pulseScale);
+        } else {
+            // If mesh somehow got lost, try to recreate it
+            console.warn(`Projectile lost its mesh! Recreating...`);
+            this.mesh = this.game.renderer.createProjectile(this);
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
         }
 
         // Completely disable all trail effects for maximum performance
@@ -371,11 +424,18 @@ export class Projectile {
     }
 
     checkCollision() {
+        // Skip collision detection if target doesn't exist anymore
+        if (!this.target || !this.target.position) {
+            // Target is gone, mark as hit to remove
+            this.hit = true;
+            return;
+        }
+
         // Calculate distance to target
         const distance = this.game.calculateDistance(this.position, this.target.position);
 
         // Check if projectile is close enough to hit
-        const hitThreshold = 0.3; // Collision radius
+        const hitThreshold = 0.4; // Larger collision radius for better hit detection
 
         if (distance <= hitThreshold) {
             this.hit = true;
