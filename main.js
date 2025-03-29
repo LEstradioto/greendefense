@@ -647,11 +647,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (serverScores && serverScores.length > 0) {
                         // Render server scores
-                        renderScoresList(highScoresList, serverScores, "Server Rankings");
+                        renderScoresList(highScoresList, serverScores, "Global Rankings");
                     } else {
                         // Fallback to localStorage
                         const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
-                        renderScoresList(highScoresList, localScores, "Local Rankings");
+                        renderScoresList(highScoresList, localScores, "Player Rankings");
                     }
                 })
                 .catch(error => {
@@ -662,7 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     // Fallback to localStorage
                     const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
-                    renderScoresList(highScoresList, localScores, "Local Rankings (Server Unavailable)");
+                    renderScoresList(highScoresList, localScores, "Player Rankings (Server Unavailable)");
                 });
         } catch (err) {
             console.error("Error displaying high scores:", err);

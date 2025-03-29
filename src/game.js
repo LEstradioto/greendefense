@@ -2517,12 +2517,12 @@ export class Game {
             // First try to get scores from the server
             this.fetchScoresFromServer().then(serverScores => {
                 if (serverScores && serverScores.length > 0) {
-                    this.renderRankings(scoreDisplay, serverScores, "Server Rankings");
+                    this.renderRankings(scoreDisplay, serverScores, "Global Rankings");
                 } else {
                     // Fallback to localStorage if server fails
                     const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
                     if (localScores.length > 0) {
-                        this.renderRankings(scoreDisplay, localScores, "Local Rankings");
+                        this.renderRankings(scoreDisplay, localScores, "Player Rankings");
                     }
                 }
             }).catch(err => {
@@ -2530,7 +2530,7 @@ export class Game {
                 // Fallback to localStorage
                 const localScores = JSON.parse(localStorage.getItem('towerDefenseHighScores') || '[]');
                 if (localScores.length > 0) {
-                    this.renderRankings(scoreDisplay, localScores, "Local Rankings");
+                    this.renderRankings(scoreDisplay, localScores, "Player Rankings");
                 }
             });
         } catch (err) {
