@@ -25,6 +25,15 @@ export class Game {
             score: 0
         };
         
+        // Performance monitoring
+        this.fpsCounter = { 
+            element: null,
+            frames: 0,
+            lastUpdate: 0,
+            value: 0
+        };
+        this.createFpsCounter();
+        
         // Game timing tracking for score multiplier
         this.gameStartTime = 0;
         this.waveStartTimes = {};
@@ -146,8 +155,57 @@ export class Game {
         }, 3000);
     }
 
-    update(currentTime) {
-        if (!this.gameStarted || this.gameOver) return;
+    createFpsCounter() {
+        // Create the FPS counter element
+        const fpsElement = document.createElement('div');
+        fpsElement.id = 'fps-counter';
+        fpsElement.style.position = 'fixed';
+        fpsElement.style.top = '10px';
+        fpsElement.style.right = '10px';
+        fpsElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        fpsElement.style.color = '#00ff00';
+        fpsElement.style.padding = '5px 10px';
+        fpsElement.style.borderRadius = '3px';
+        fpsElement.style.fontFamily = 'monospace';
+        fpsElement.style.fontSize = '14px';
+        fpsElement.style.zIndex = '1000';
+        fpsElement.textContent = 'FPS: 0';
+        document.body.appendChild(fpsElement);
+        
+        this.fpsCounter.element = fpsElement;
+    }
+    
+    updateFpsCounter(currentTime) {
+        this.fpsCounter.frames++;
+        
+        // Update FPS display every 500ms
+        if (currentTime - this.fpsCounter.lastUpdate >= 500) {
+            // Calculate FPS: frames / seconds
+            const fps = Math.round(this.fpsCounter.frames * 1000 / (currentTime - this.fpsCounter.lastUpdate));
+            this.fpsCounter.value = fps;
+            
+            // Update display with color coding
+            let color = '#00ff00'; // Green for good FPS
+            if (fps < 30) color = '#ff0000'; // Red for bad FPS
+            else if (fps < 50) color = '#ffff00'; // Yellow for mediocre FPS
+            
+            this.fpsCounter.element.textContent = `FPS: ${fps}`;
+            this.fpsCounter.element.style.color = color;
+            
+            // Reset for next update
+            this.fpsCounter.frames = 0;
+            this.fpsCounter.lastUpdate = currentTime;
+        }
+    }
+    
+    update = (currentTime) => {
+        if (!this.gameStarted || this.gameOver) {
+            requestAnimationFrame(this.update);
+            return;
+        }
+
+        // Update FPS counter
+        this.updateFpsCounter(currentTime);
 
         // Calculate time delta
         this.deltaTime = (currentTime - this.lastFrameTime) / 1000; // convert to seconds
@@ -303,6 +361,33 @@ export class Game {
             }
         }
 
+        // Performance optimizations based on FPS
+        if (this.fpsCounter.value < 30) {
+            // Apply low-quality mode to improve performance
+            if (!this.lowQualityMode) {
+                console.log("Switching to low quality mode to improve performance");
+                this.lowQualityMode = true;
+                
+                // Reduce max particles for projectiles and effects
+                this.maxParticles = Math.min(this.maxParticles || 200, 50);
+                
+                // Tell renderer to use lower quality settings
+                if (this.renderer.setQualityLevel) {
+                    this.renderer.setQualityLevel('low');
+                }
+            }
+        } else if (this.fpsCounter.value > 45 && this.lowQualityMode) {
+            // Return to normal quality when FPS recovers
+            console.log("Returning to normal quality mode");
+            this.lowQualityMode = false;
+            this.maxParticles = 200;
+            
+            // Tell renderer to use normal quality settings
+            if (this.renderer.setQualityLevel) {
+                this.renderer.setQualityLevel('normal');
+            }
+        }
+        
         // Render the game
         this.renderer.render(this);
 
@@ -903,8 +988,34 @@ export class Game {
     }
 
     updateEnemies() {
+        // Performance optimization based on FPS and enemy count
+        const enemyCount = this.enemies.length;
+        
+        // Use adaptive update frequency based on current FPS
+        const fpsValue = this.fpsCounter.value || 60;
+        const shouldOptimize = (fpsValue < 40 && enemyCount > 20);
+        
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
+            
+            // Apply performance optimizations if needed
+            if (shouldOptimize) {
+                // Distance-based level of detail
+                const distanceToCamera = this.renderer.getDistanceToCamera(enemy.mesh.position);
+                
+                if (distanceToCamera > 30) {
+                    // Skip some updates for far enemies when FPS is low
+                    if (i % 3 !== 0) continue; // Only update 1/3 of distant enemies each frame
+                    
+                    // Use simpler update for distant enemies if method exists
+                    if (typeof enemy.updateSimple === 'function') {
+                        enemy.updateSimple(this.deltaTime);
+                        continue;
+                    }
+                }
+            }
+            
+            // Normal update
             enemy.update(this.deltaTime);
 
             // Check if enemy reached the end
@@ -1069,6 +1180,25 @@ export class Game {
 
             // Check if projectile hit a target or is out of bounds
             if (projectile.hit || projectile.isOutOfBounds()) {
+                // Remove the 3D object from the scene before removing from array
+                if (projectile.mesh) {
+                    this.renderer.scene.remove(projectile.mesh);
+                    
+                    // Also dispose of geometries and materials to prevent memory leaks
+                    if (projectile.mesh.geometry) {
+                        projectile.mesh.geometry.dispose();
+                    }
+                    
+                    if (projectile.mesh.material) {
+                        if (Array.isArray(projectile.mesh.material)) {
+                            projectile.mesh.material.forEach(m => m.dispose());
+                        } else {
+                            projectile.mesh.material.dispose();
+                        }
+                    }
+                }
+                
+                // Remove projectile from the array
                 this.projectiles.splice(i, 1);
             }
         }

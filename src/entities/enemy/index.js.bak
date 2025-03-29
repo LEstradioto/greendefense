@@ -478,12 +478,88 @@ export class Enemy {
     }
 
     createHitEffect(damageAmount) {
-        // Completely disable hit effects for maximum performance
-        // Just return immediately without creating any visual effects
-        return;
+        if (!this.game.renderer || !this.mesh) return;
         
-        /* All hit effect code removed for performance */
+        // Get color based on element
+        let color = 0xFF0000; // Default red
         
+        // Choose a different color for critical hits
+        const isCritical = Math.random() < 0.1; // 10% chance for visual variation
+        
+        if (isCritical) {
+            color = 0xFFFF00; // Yellow for crits
+        }
+        
+        // Create hit effect
+        const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+        const hitMaterial = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.7
+        });
+
+        const hitEffect = new THREE.Mesh(hitGeometry, hitMaterial);
+        hitEffect.position.copy(this.mesh.position);
+        hitEffect.position.y += 0.5; // Position above enemy
+
+        this.game.renderer.scene.add(hitEffect);
+        
+        // Create simplified hit effect animation
+        const startTime = performance.now();
+        const duration = 200; // Extremely short - just 200ms
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Just fade out
+                hitEffect.material.opacity = 0.8 * (1 - progress);
+                requestAnimationFrame(animate);
+            } else {
+                // Clean up resources
+                this.game.renderer.scene.remove(hitEffect);
+                hitEffect.geometry.dispose();
+                hitEffect.material.dispose();
+            }
+        };
+        
+        animate();
+        
+        
+        const flame = new THREE.Mesh(flameGeometry, flameMaterial);
+        
+        // Random position around the enemy
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 0.2 + Math.random() * 0.2;
+        flame.position.set(
+            this.mesh.position.x + Math.cos(angle) * radius,
+            this.mesh.position.y + 0.2 + Math.random() * 0.4,
+            this.mesh.position.z + Math.sin(angle) * radius
+        );
+        
+        this.game.renderer.scene.add(flame);
+        
+        // Animate flame rising and fading
+        const startTime = performance.now();
+        const duration = 500; // 0.5 seconds
+        
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            if (progress < 1) {
+                // Rise up and fade out
+                flame.position.y += 0.01;
+                flameMaterial.opacity = 0.7 * (1 - progress);
+                
+                requestAnimationFrame(animate);
+            } else {
+                this.game.renderer.scene.remove(flame);
+            }
+        };
+        
+        animate();
     }
     
     createBurnEffectVisual() {

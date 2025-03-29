@@ -8,6 +8,9 @@ export class Renderer {
         this.canvas = canvas;
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // For performance optimizations
+        this.distanceVector = new THREE.Vector3(); // Reusable vector for distance calculations
 
         // Set up renderer with enhanced quality settings
         // Enable stencil buffer to prevent unwanted rendering artifacts with ground plane
@@ -249,6 +252,28 @@ export class Renderer {
         this.scene.add(rimLight);
     }
 
+    // Helper method to get distance from camera to a position
+    getDistanceToCamera(position) {
+        this.distanceVector.copy(position).sub(this.camera.position);
+        return this.distanceVector.length();
+    }
+
+    setQualityLevel(level) {
+        if (level === 'low') {
+            // Lower quality settings for better performance
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+            this.renderer.shadowMap.enabled = true; // Always keep shadows enabled
+            this.particleCount = 0; // No particles in low quality
+            this.quality = 'low';
+        } else {
+            // Normal quality settings
+            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.shadowMap.enabled = true;
+            this.particleCount = 0; // No particles even in normal quality
+            this.quality = 'normal';
+        }
+    }
+    
     render(game) {
         // Update camera controls
         this.controls.update();
