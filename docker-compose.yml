@@ -8,6 +8,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - DATA_DIR=/app/data
     restart: unless-stopped
     volumes:
       - scores-data:/app/data

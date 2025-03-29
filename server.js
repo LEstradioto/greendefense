@@ -3,6 +3,7 @@ import cors from 'cors';
 import sqlite3 from 'sqlite3';
 const { Database } = sqlite3.verbose();
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 // Get __dirname equivalent in ES modules
@@ -15,7 +16,17 @@ const PORT = process.env.PORT || 3001;
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development' || false;
 
 // Setup database
-const dbPath = path.join(__dirname, 'scores.db');
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+// Ensure data directory exists
+try {
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+} catch (err) {
+  console.error('Error creating data directory:', err.message);
+}
+
+const dbPath = path.join(dataDir, 'scores.db');
 const db = new Database(dbPath, (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
