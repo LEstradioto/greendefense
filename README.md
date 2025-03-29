@@ -73,3 +73,5 @@ How about Security, Code Quality, etc...? I'm sure there are many things to impr
 1. Make game more detailed (textures, shaders, fx...)
 2. Multiplayer would be awesome, having cards to send enemies hordes, etc.
 3. Mix Teamfight Tatics, Tower Defense, and TCG elements.
+
+### Deployed Successfully with [Coolify](https://coolify.io/)
