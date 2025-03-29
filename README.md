@@ -1,4 +1,4 @@
-# GREEN TOWER DEFENSE 🤖 VIBE CODED 99% 🤖
+# GREEN TOWER DEFENSE 🤖 VIBE CODED 🤖
 
 ![Game Screenshot](./screenshot.png)
 
