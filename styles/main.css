@@ -983,6 +983,7 @@ button:active {
 /* Music player button styles */
 .music-button {
     position: fixed;
+    top: auto;
     bottom: 15px;
     left: 15px;
     width: 50px;
@@ -1020,13 +1021,46 @@ button:active {
     to { box-shadow: 0 0 20px rgba(0, 255, 0, 0.8), 0 0 30px rgba(0, 255, 0, 0.3); }
 }
 
+#fx-toggle {
+    top: auto;
+    bottom: 8px;
+    left: 70px;
+}
+
+#music-toggle {
+    top: auto;
+    bottom: 8px;
+    left: 5px;
+}
+
 @media (max-width: 768px) {
     .music-button {
-        bottom: 10px;
-        left: 10px;
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
+        width: 20px;
+        height: 30px;
+        font-size: 12px;
+        border-width: 2px;
+    }
+
+    /* Position audio controls at the top on mobile */
+    #music-toggle {
+        top: 27px !important; /* Adjusted */
+        bottom: auto !important;
+        left: 5px !important;
+    }
+
+    #fx-toggle { /* Select the FX button added by JS */
+        top: 27px; /* Adjusted */
+        bottom: auto;
+        left: 70px; /* Position next to the music toggle (40px width + 5px gap + 5px offset) */
+        /* Inherits size reduction from .music-button */
+    }
+
+    /* Adjust FPS counter position on mobile */
+    .fps-counter-element {
+        top: 30px; /* Adjusted */
+        right: 10px;
+        font-size: 12px; /* Optionally make smaller on mobile */
+        padding: 3px 6px;
     }
 }
 
@@ -1365,4 +1399,13 @@ button:active {
     gap: 10px;
     margin-top: 15px;
     justify-content: center;
+}
+
+/* Default style for FPS counter */
+.fps-counter-element {
+    position: fixed;
+    top: 30px;
+    right: 10px;
+    z-index: 1000;
+    /* Other visual styles remain inline in JS for now */
 }

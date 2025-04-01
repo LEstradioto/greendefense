@@ -16,21 +16,21 @@ export class Game {
         this.towers = [];
         this.projectiles = [];
         this.powerCards = new PowerCards(this);
-        
+
         // Object pools for entity recycling
         this.enemyPool = [];
         this.projectilePool = [];
         this.particlePool = [];
-        
+
         // Maximum number of entities to keep performance stable
         this.maxActiveProjectiles = 100; // Reduced limit to prevent visual clutter
         this.maxActiveEnemies = 150;
-        
+
         // Pathfinding optimization
         this.cachedPaths = new Map(); // Store paths by grid coordinates - using JavaScript's Map() object
         this.pathRecalcFrequency = 500; // ms between path recalculations
         this._pathfindingCalls = 0; // For debugging
-        
+
         // Performance optimization settings
         this.lowQualityMode = false;
         this.maxParticles = 200;
@@ -178,16 +178,19 @@ export class Game {
         // Create the FPS counter element
         const fpsElement = document.createElement('div');
         fpsElement.id = 'fps-counter';
-        fpsElement.style.position = 'fixed';
-        fpsElement.style.top = '10px';
-        fpsElement.style.right = '10px';
+        // Add class for CSS styling
+        fpsElement.classList.add('fps-counter-element');
+        // Keep visual styles inline, move positioning to CSS
+        // fpsElement.style.position = 'fixed';
+        // fpsElement.style.top = '10px';
+        // fpsElement.style.right = '10px';
         fpsElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
         fpsElement.style.color = '#00ff00';
         fpsElement.style.padding = '5px 10px';
         fpsElement.style.borderRadius = '3px';
         fpsElement.style.fontFamily = 'monospace';
         fpsElement.style.fontSize = '14px';
-        fpsElement.style.zIndex = '1000';
+        // fpsElement.style.zIndex = '1000';
         fpsElement.textContent = 'FPS: 0';
         document.body.appendChild(fpsElement);
 
@@ -1031,7 +1034,7 @@ export class Game {
             // Apply performance optimizations if needed
             if (shouldOptimize) {
                 // Distance-based level of detail - with null check
-                const distanceToCamera = enemy.mesh && this.renderer ? 
+                const distanceToCamera = enemy.mesh && this.renderer ?
                     this.renderer.getDistanceToCamera(enemy.mesh.position) : 0;
 
                 if (distanceToCamera > 30) {
@@ -1221,13 +1224,13 @@ export class Game {
     updateProjectiles() {
         // Simple projectile management without complex pooling
         // This is a more reliable approach when debugging projectile issues
-        
+
         // Log for debugging - once per second to avoid console spam
         if (!this._lastProjectileDebugTime || performance.now() - this._lastProjectileDebugTime > 1000) {
             console.log(`Active projectiles: ${this.projectiles.length}`);
             this._lastProjectileDebugTime = performance.now();
         }
-        
+
         // Enforce maximum projectiles limit for performance
         if (this.projectiles.length > this.maxActiveProjectiles) {
             // Remove oldest projectiles when there are too many
@@ -1239,27 +1242,27 @@ export class Game {
                 }
             }
         }
-        
+
         // Count active and removed projectiles for debugging
         let activeCount = 0;
         let removedCount = 0;
-        
+
         // Update all projectiles
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             const projectile = this.projectiles[i];
-            
+
             // Skip updates for invalid projectiles
             if (!projectile) {
                 this.projectiles.splice(i, 1);
                 continue;
             }
-            
+
             // Ensure projectile mesh is in scene
             if (projectile.mesh && !this.renderer.scene.children.includes(projectile.mesh)) {
                 console.log(`Adding missing projectile mesh back to scene`);
                 this.renderer.scene.add(projectile.mesh);
             }
-            
+
             // Update projectile position and state
             projectile.update(this.deltaTime);
             activeCount++;
@@ -1272,16 +1275,16 @@ export class Game {
                 } else {
                     console.log(`Projectile out of bounds and being removed`);
                 }
-                
+
                 // Remove mesh from scene
                 if (projectile.mesh) {
                     this.renderer.scene.remove(projectile.mesh);
-                    
+
                     // Immediately dispose resources
                     if (projectile.mesh.geometry) {
                         projectile.mesh.geometry.dispose();
                     }
-                    
+
                     if (projectile.mesh.material) {
                         if (Array.isArray(projectile.mesh.material)) {
                             projectile.mesh.material.forEach(m => m.dispose());
@@ -1290,16 +1293,16 @@ export class Game {
                         }
                     }
                 }
-                
+
                 // Remove from array - no object pooling for now
                 this.projectiles.splice(i, 1);
                 removedCount++;
             }
         }
-        
+
         // Add debug info to FPS counter
         if (this.fpsCounter && this.fpsCounter.element) {
-            this.fpsCounter.element.textContent = `FPS: ${this.fpsCounter.value} | P: ${this.projectiles.length} | A: ${activeCount} | R: ${removedCount}`;
+            this.fpsCounter.element.textContent = `FPS: ${this.fpsCounter.value}`; // Simplified display
         }
     }
 
