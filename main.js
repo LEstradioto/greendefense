@@ -50,7 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Play tracks in sequence instead of shuffling
         // const shuffledTracks = shuffleTracks([...musicTracks]);
         const tracksToPlay = [...musicTracks]; // Use original order
-        let currentTrackIndex = 0; // Start with first track
+        // Start with a random track index
+        let currentTrackIndex = Math.floor(Math.random() * tracksToPlay.length);
 
         // Play the current track from the sequence
         const playCurrentTrack = () => {

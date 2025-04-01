@@ -238,21 +238,6 @@ export class UI {
                     }
                 }
             }
-            // Two finger pinch - zoom camera
-            else if (event.touches.length === 2) {
-                const dx = event.touches[0].clientX - event.touches[1].clientX;
-                const dy = event.touches[0].clientY - event.touches[1].clientY;
-                const touchDistance = Math.sqrt(dx * dx + dy * dy);
-
-                // Calculate zoom delta
-                const delta = (touchDistance - this.touchState.lastTouchDistance) * 0.01;
-
-                // Zoom camera
-                renderer.controls.dollyIn(1 - delta);
-
-                // Update last touch distance
-                this.touchState.lastTouchDistance = touchDistance;
-            }
         }, { passive: false });
 
         // Touch end handler

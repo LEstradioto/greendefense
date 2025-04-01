@@ -40,6 +40,12 @@ export class Renderer {
         this.camera.position.set(0, 50, 40);
         this.camera.lookAt(0, 0, 0);
 
+        // Adjust initial camera for mobile (zoom out and higher angle)
+        if (window.innerWidth <= 768) {
+            this.camera.position.set(0, 65, 55); // Further away (z: 40->55), higher angle (y: 50->65)
+            this.camera.lookAt(0, 0, 0); // Ensure it still looks at the center
+        }
+
         // Set up controls for camera movement
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
