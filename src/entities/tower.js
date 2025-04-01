@@ -38,6 +38,14 @@ export class Tower {
         // Create 3D representation
         this.mesh = this.game.renderer.createTower(this);
 
+        // Add the created mesh group to the scene
+        if (this.mesh) {
+             this.game.renderer.scene.add(this.mesh);
+             console.log(`Tower mesh added to scene for type: ${this.type}`); // Debug log
+        } else {
+             console.error(`Failed to create tower mesh for type: ${this.type}`); // Error log
+        }
+
         // Set the position of the tower mesh
         // Position the tower directly at the grid position
         // The tower foundation is built to sit on the ground
@@ -388,7 +396,7 @@ export class Tower {
 
     createProjectile(target) {
         // Skip creating projectile if too many exist and FPS is low
-        if (this.game.projectiles.length > this.game.maxActiveProjectiles && 
+        if (this.game.projectiles.length > this.game.maxActiveProjectiles &&
             this.game.fpsCounter && this.game.fpsCounter.value < 30) {
             return; // Skip firing during performance issues
         }
@@ -405,11 +413,11 @@ export class Tower {
 
         // Try to get projectile from pool if available
         let projectile;
-        
+
         // Check if the fromPool static method exists
-        if (this.game.projectilePool && this.game.projectilePool.length > 0 && 
+        if (this.game.projectilePool && this.game.projectilePool.length > 0 &&
             typeof Projectile.fromPool === 'function') {
-            
+
             projectile = Projectile.fromPool(
                 this.game,
                 this.projectileType,

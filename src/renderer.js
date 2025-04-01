@@ -1,4 +1,3 @@
-
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ElementTypes, ElementStyles } from './elements.js';
@@ -129,24 +128,20 @@ export class Renderer {
                 roughness: 0.1,
                 metalness: 0.3
             }),
-            arrow: new THREE.MeshStandardMaterial({
-                color: 0x4CAF50, // Green
-                roughness: 0.5,
-                metalness: 0.7
-            }),
-            doubleArrow: new THREE.MeshStandardMaterial({
-                color: 0x66BB6A, // Light green
-                roughness: 0.5,
-                metalness: 0.8
-            }),
-            cannon: new THREE.MeshStandardMaterial({
-                color: 0x388E3C, // Dark green
-                roughness: 0.3,
-                metalness: 0.9
-            }),
-            simple: new THREE.MeshStandardMaterial({ color: 0x43A047 }),
-            elephant: new THREE.MeshStandardMaterial({ color: 0x43A047 }),
-            pirate: new THREE.MeshStandardMaterial({ color: 0x43A047 }),
+            // Tower materials will be populated below based on elements/types
+            towerBases: {},
+            towerTops: {},
+            towerFoundations: {},
+            towerSpecial: {}, // For unique parts like cannon barrel, fire core
+
+            // Enemy materials (assuming reuse is good here too)
+            simpleEnemy: new THREE.MeshStandardMaterial({ color: 0xCCCCCC }), // Neutral default
+            fireEnemy: new THREE.MeshStandardMaterial({ color: 0xFF7043, emissive: 0xE64A19, emissiveIntensity: 0.4 }),
+            waterEnemy: new THREE.MeshStandardMaterial({ color: 0x4FC3F7, emissive: 0x29B6F6, emissiveIntensity: 0.4 }),
+            earthEnemy: new THREE.MeshStandardMaterial({ color: 0xA1887F, emissive: 0x795548, emissiveIntensity: 0.4 }),
+            airEnemy: new THREE.MeshStandardMaterial({ color: 0xE0E0E0, emissive: 0xBDBDBD, emissiveIntensity: 0.4 }), // Added missing 0x prefix
+            shadowEnemy: new THREE.MeshStandardMaterial({ color: 0x7E57C2, emissive: 0x5E35B1, emissiveIntensity: 0.4 }),
+
             projectile: new THREE.MeshBasicMaterial({
                 color: 0x76FF03, // Light green
             }),
@@ -160,8 +155,142 @@ export class Renderer {
                 color: 0x4CAF50,
                 transparent: true,
                 opacity: 0.3
+            }),
+            // Shadow plane material (reused for all towers)
+            towerShadow: new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.25,
+                depthWrite: false,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1
+            }),
+            // Glow material base (color set per tower)
+            towerGlow: new THREE.MeshBasicMaterial({
+                // Color will be set dynamically, but other props are shared
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
             })
         };
+
+        // Geometries cache for reuse
+        this.geometries = {
+            // Tower Geometries
+            towerBase: new THREE.CylinderGeometry(0.4, 0.5, 0.6, 8),
+            towerFoundation: new THREE.CylinderGeometry(0.55, 0.6, 0.1, 8),
+            towerShadow: new THREE.ShapeGeometry(new THREE.Shape().moveTo(0, 0).absarc(0, 0, 0.5, 0, Math.PI * 2, false)), // 1.0 diameter -> 0.5 radius
+            towerGlow: new THREE.SphereGeometry(0.9, 16, 16),
+
+            // Fire Tower Specific
+            fireBasicTop: new THREE.ConeGeometry(0.35, 0.7, 8),
+            fireAdvancedCore: new THREE.ConeGeometry(0.15, 0.4, 8),
+
+            // Water Tower Specific
+            waterBasicTop: new THREE.SphereGeometry(0.35, 12, 12),
+            // Tube geometry depends on curve, cannot easily pre-cache here if curve changes.
+            // Will create TubeGeometry dynamically for now. Consider optimizing later if needed.
+
+            // Earth Tower Specific
+            earthBasicTop: new THREE.DodecahedronGeometry(0.35, 0),
+            earthAdvancedRock: new THREE.DodecahedronGeometry(0.15, 0),
+
+            // Air Tower Specific
+            airOrb: new THREE.SphereGeometry(0.25, 12, 12),
+            airRing: new THREE.TorusGeometry(0.3, 0.05, 8, 24),
+
+            // Shadow Tower Specific
+            shadowBasicTop: new THREE.OctahedronGeometry(0.3, 0),
+            shadowAdvancedVoid: new THREE.SphereGeometry(0.4, 12, 12),
+
+            // Standard Tower Specific
+            arrowTopBase: new THREE.ConeGeometry(0.3, 0.6, 8),
+            arrowNose: new THREE.ConeGeometry(0.15, 0.5, 8),
+            doubleArrowTopCone: new THREE.ConeGeometry(0.25, 0.5, 8),
+            doubleArrowNose: new THREE.ConeGeometry(0.12, 0.4, 8),
+            cannonTopSphere: new THREE.SphereGeometry(0.35, 12, 12),
+            cannonBarrel: new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
+            defaultTop: new THREE.BoxGeometry(0.4, 0.4, 0.4),
+
+            // Projectile Geometry
+            projectileSphere: new THREE.SphereGeometry(0.1, 8, 8),
+
+            // Enemy Geometries (Example - adjust complexity as needed)
+            enemyBasic: new THREE.BoxGeometry(0.6, 0.6, 0.6), // Simple cube for basic enemies
+            enemySphere: new THREE.SphereGeometry(0.4, 8, 8), // Sphere for others
+            enemyCone: new THREE.ConeGeometry(0.4, 0.8, 8), // Cone for bosses?
+        };
+
+        // Populate tower materials based on ElementStyles
+        for (const element in ElementStyles) {
+            const style = ElementStyles[element];
+            this.materials.towerBases[element] = new THREE.MeshStandardMaterial({
+                color: style.color,
+                roughness: 0.5,
+                metalness: 0.7,
+                emissive: style.emissive,
+                emissiveIntensity: 0.3
+            });
+            this.materials.towerTops[element] = new THREE.MeshStandardMaterial({
+                color: style.color,
+                roughness: 0.4,
+                metalness: 0.8,
+                emissive: style.emissive,
+                emissiveIntensity: 0.5
+            });
+            // Foundation uses a clone to allow polygon offset without affecting base
+            this.materials.towerFoundations[element] = new THREE.MeshStandardMaterial({
+                 color: style.color,
+                 roughness: 0.5,
+                 metalness: 0.7,
+                 emissive: style.emissive,
+                 emissiveIntensity: 0.3,
+                 polygonOffset: true,
+                 polygonOffsetFactor: 1,
+                 polygonOffsetUnits: 1
+             });
+        }
+        // Add neutral materials explicitly if not in ElementStyles
+        if (!this.materials.towerBases[ElementTypes.NEUTRAL]) {
+            const neutralColor = 0x388E3C; // Default green from original code
+            const neutralEmissive = 0x2E7D32;
+            this.materials.towerBases[ElementTypes.NEUTRAL] = new THREE.MeshStandardMaterial({
+                color: neutralColor, roughness: 0.5, metalness: 0.7, emissive: neutralEmissive, emissiveIntensity: 0.3
+            });
+            this.materials.towerTops[ElementTypes.NEUTRAL] = new THREE.MeshStandardMaterial({
+                color: neutralColor, roughness: 0.4, metalness: 0.8, emissive: neutralEmissive, emissiveIntensity: 0.5
+            });
+            this.materials.towerFoundations[ElementTypes.NEUTRAL] = new THREE.MeshStandardMaterial({
+                 color: neutralColor, roughness: 0.5, metalness: 0.7, emissive: neutralEmissive, emissiveIntensity: 0.3,
+                 polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+             });
+        }
+
+        // Specific materials for unique parts
+        this.materials.towerSpecial['fireAdvancedCore'] = new THREE.MeshStandardMaterial({
+            color: 0xFF9800, emissive: 0xFF5722, emissiveIntensity: 0.8
+        });
+        this.materials.towerSpecial['waterAdvancedTube'] = new THREE.MeshStandardMaterial({
+            color: 0x4FC3F7, transparent: true, opacity: 0.8
+        });
+         this.materials.towerSpecial['airOrb'] = new THREE.MeshStandardMaterial({
+            color: 0xECEFF1, transparent: true, opacity: 0.8, emissive: 0xCFD8DC, emissiveIntensity: 0.5
+        });
+         this.materials.towerSpecial['airRing'] = new THREE.MeshStandardMaterial({
+            color: 0xB0BEC5, transparent: true, opacity: 0.7
+        });
+        this.materials.towerSpecial['shadowCore'] = new THREE.MeshStandardMaterial({
+             color: 0x4A148C, emissive: 0x311B92, emissiveIntensity: 0.7
+        });
+        this.materials.towerSpecial['shadowAdvancedVoid'] = new THREE.MeshBasicMaterial({
+             color: 0x7E57C2, transparent: true, opacity: 0.3, side: THREE.BackSide
+        });
+        this.materials.towerSpecial['cannonBarrel'] = new THREE.MeshStandardMaterial({
+            color: 0x212121, roughness: 0.3, metalness: 0.9
+        });
 
         // Create helper objects
         this.gridHelper = new THREE.GridHelper(25, 25);
@@ -994,7 +1123,7 @@ export class Renderer {
                         });
                         break;
                     default:
-                        material = this.materials.simple;
+                        material = this.materials.simpleEnemy;
                 }
         }
 
@@ -1184,79 +1313,44 @@ export class Renderer {
     createTower(tower) {
         // Create a group for the tower and its components
         const towerGroup = new THREE.Group();
-        let baseMaterial, topMaterial;
+        // Get pre-created materials based on element
+        const elementKey = tower.element || ElementTypes.NEUTRAL; // Ensure key exists
+        const baseMaterial = this.materials.towerBases[elementKey];
+        const topMaterial = this.materials.towerTops[elementKey];
+        const foundationMaterial = this.materials.towerFoundations[elementKey];
+
 
         // Determine if this is a special tower (only elemental towers, not cannon/doubleArrow)
         // Special towers: any tower with elemental type (excluding cannon and doubleArrow)
         const isSpecialTower = tower.element !== ElementTypes.NEUTRAL;
 
         // Get element style if tower has an element
-        const elementStyle = tower.element && ElementStyles[tower.element] ?
-            ElementStyles[tower.element] :
-            { color: 0x388E3C, emissive: 0x2E7D32, particleColor: 0x4CAF50 };
+        // const elementStyle = tower.element && ElementStyles[tower.element] ?
+        //     ElementStyles[tower.element] :
+        //     { color: 0x388E3C, emissive: 0x2E7D32, particleColor: 0x4CAF50 };
 
-        // Create materials based on element
-        baseMaterial = new THREE.MeshStandardMaterial({
-            color: elementStyle.color,
-            roughness: 0.5,
-            metalness: 0.7,
-            emissive: elementStyle.emissive,
-            emissiveIntensity: 0.3
-        });
+        // Create materials based on element --- REMOVED, using cached materials now
 
-        topMaterial = new THREE.MeshStandardMaterial({
-            color: elementStyle.color,
-            roughness: 0.4,
-            metalness: 0.8,
-            emissive: elementStyle.emissive,
-            emissiveIntensity: 0.5
-        });
 
         // Create the tower base - taller for better visibility
-        const baseGeometry = new THREE.CylinderGeometry(0.4, 0.5, 0.6, 8);
-        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        const base = new THREE.Mesh(this.geometries.towerBase, baseMaterial);
         base.position.y = 0.3; // Position above ground, higher now
 
         // Add a wider foundation base connecting to the ground - thicker and wider
-        const foundationGeometry = new THREE.CylinderGeometry(0.55, 0.6, 0.1, 8);
-        const foundationMaterial = new THREE.MeshStandardMaterial({
-            color: baseMaterial.color.clone(),
-            roughness: baseMaterial.roughness,
-            metalness: baseMaterial.metalness,
-            emissive: baseMaterial.emissive,
-            emissiveIntensity: baseMaterial.emissiveIntensity,
-            polygonOffset: true,      // Enable polygon offset
-            polygonOffsetFactor: 1,   // Move geometry away from camera
-            polygonOffsetUnits: 1     // Further reduce z-fighting
-        });
-        const foundation = new THREE.Mesh(foundationGeometry, foundationMaterial);
+        const foundation = new THREE.Mesh(this.geometries.towerFoundation, foundationMaterial);
         foundation.position.y = 0.05; // Slightly above ground level to prevent z-fighting
+
 
         // Enhanced shadow settings for tower base
         base.castShadow = true;
         base.receiveShadow = true;
+        foundation.castShadow = false; // Foundation mainly for visual connection, can skip shadow
+        foundation.receiveShadow = true;
+
 
         // Create a shadow effect using a blob decal instead of a plane
-        // This prevents z-fighting with the ground
-        const shadowSize = 1.0; // Size of shadow
-
-        // Create points for a circular shadow (more natural looking than a square)
-        const shadowShape = new THREE.Shape();
-        shadowShape.moveTo(0, 0);
-        shadowShape.absarc(0, 0, shadowSize/2, 0, Math.PI * 2, false);
-
-        const shadowGeometry = new THREE.ShapeGeometry(shadowShape);
-        const shadowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            transparent: true,
-            opacity: 0.25, // More subtle shadow
-            depthWrite: false, // Prevent z-fighting
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1
-        });
-
-        const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
+        // Use the cached shadow geometry and material
+        const shadowPlane = new THREE.Mesh(this.geometries.towerShadow, this.materials.towerShadow);
         shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
         shadowPlane.position.y = 0.02; // Just above ground level
         shadowPlane.renderOrder = -1; // Render before other objects
@@ -1281,8 +1375,8 @@ export class Renderer {
 
                     // Base shape for fire tower (tapered cylinder)
                     const fireCone = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.35, 0.7, 8),
-                        topMaterial
+                        this.geometries.fireBasicTop, // Use cached geometry
+                        topMaterial // Use cached material
                     );
                     fireCone.position.y = 0.9; // Higher to match taller base
                     fireGroup.add(fireCone);
@@ -1291,12 +1385,8 @@ export class Renderer {
                     if (level === 'advanced') {
                         // Add a center flame
                         const flameCore = new THREE.Mesh(
-                            new THREE.ConeGeometry(0.15, 0.4, 8),
-                            new THREE.MeshStandardMaterial({
-                                color: 0xFF9800, // More orange center
-                                emissive: 0xFF5722,
-                                emissiveIntensity: 0.8
-                            })
+                            this.geometries.fireAdvancedCore, // Use cached geometry
+                            this.materials.towerSpecial['fireAdvancedCore'] // Use cached material
                         );
                         flameCore.position.y = 1.0;
                         fireGroup.add(flameCore);
@@ -1311,8 +1401,8 @@ export class Renderer {
 
                     // Sphere base for water tower
                     const waterSphere = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.35, 12, 12),
-                        topMaterial
+                        this.geometries.waterBasicTop, // Use cached geometry
+                        topMaterial // Use cached material
                     );
                     waterSphere.position.y = 0.9;
                     waterGroup.add(waterSphere);
@@ -1320,6 +1410,8 @@ export class Renderer {
                     // Add water jets/fountains for advanced tower
                     if (level === 'advanced') {
                         // Create multiple curved tubes
+                        // Tube geometry needs to be dynamic based on curve, keep creating it here
+                        const tubeMaterial = this.materials.towerSpecial['waterAdvancedTube']; // Reuse material
                         for (let i = 0; i < 3; i++) {
                             const curve = new THREE.QuadraticBezierCurve3(
                                 new THREE.Vector3(0, 0.7, 0),
@@ -1327,14 +1419,10 @@ export class Renderer {
                                 new THREE.Vector3(Math.cos(i * Math.PI * 2/3) * 0.2, 1.2, Math.sin(i * Math.PI * 2/3) * 0.2)
                             );
 
-                            const tubeGeometry = new THREE.TubeGeometry(curve, 8, 0.05, 8, false);
-                            const tubeMaterial = new THREE.MeshStandardMaterial({
-                                color: 0x4FC3F7,
-                                transparent: true,
-                                opacity: 0.8
-                            });
+                            const tubeGeometry = new THREE.TubeGeometry(curve, 8, 0.05, 8, false); // Create geometry
+                            // tubeMaterial created inside loop before - now reuse
 
-                            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial); // Use cached material
                             waterGroup.add(tube);
                         }
                     }
@@ -1348,8 +1436,8 @@ export class Renderer {
 
                     // Create a base rock formation
                     const rockBase = new THREE.Mesh(
-                        new THREE.DodecahedronGeometry(0.35, 0),
-                        topMaterial
+                        this.geometries.earthBasicTop, // Use cached geometry
+                        topMaterial // Use cached material
                     );
                     rockBase.position.y = 0.9;
                     earthGroup.add(rockBase);
@@ -1357,10 +1445,11 @@ export class Renderer {
                     // For advanced, add extra rock formations
                     if (level === 'advanced') {
                         // Add smaller rocks on top
+                         const smallRockGeometry = this.geometries.earthAdvancedRock; // Reuse geometry
                         for (let i = 0; i < 3; i++) {
                             const smallRock = new THREE.Mesh(
-                                new THREE.DodecahedronGeometry(0.15, 0),
-                                topMaterial
+                                smallRockGeometry, // Use cached geometry
+                                topMaterial // Use same material as base rock
                             );
 
                             // Position randomly on top of base
@@ -1387,31 +1476,24 @@ export class Renderer {
                 case 'air':
                     // Air tower - light, airy design with motion
                     const airGroup = new THREE.Group();
+                    const airOrbMaterial = this.materials.towerSpecial['airOrb']; // Reuse material
+                    const airRingMaterial = this.materials.towerSpecial['airRing']; // Reuse material
 
                     // Create a central floating orb
                     const airOrb = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.25, 12, 12),
-                        new THREE.MeshStandardMaterial({
-                            color: 0xECEFF1,
-                            transparent: true,
-                            opacity: 0.8,
-                            emissive: 0xCFD8DC,
-                            emissiveIntensity: 0.5
-                        })
+                        this.geometries.airOrb, // Use cached geometry
+                        airOrbMaterial // Use cached material
                     );
                     airOrb.position.y = 0.8;
                     airGroup.add(airOrb);
 
                     // Add floating rings for both basic and advanced
                     const ringCount = level === 'advanced' ? 3 : 1;
+                    const ringGeometry = this.geometries.airRing; // Reuse geometry
                     for (let i = 0; i < ringCount; i++) {
                         const ring = new THREE.Mesh(
-                            new THREE.TorusGeometry(0.3, 0.05, 8, 24),
-                            new THREE.MeshStandardMaterial({
-                                color: 0xB0BEC5,
-                                transparent: true,
-                                opacity: 0.7
-                            })
+                            ringGeometry, // Use cached geometry
+                            airRingMaterial // Use cached material
                         );
 
                         // Position around orb
@@ -1437,15 +1519,12 @@ export class Renderer {
                 case 'shadow':
                     // Shadow tower - dark, mysterious with void effects
                     const shadowGroup = new THREE.Group();
+                    const shadowCoreMaterial = this.materials.towerSpecial['shadowCore']; // Reuse material
 
                     // Create a dark core
                     const shadowCore = new THREE.Mesh(
-                        new THREE.OctahedronGeometry(0.3, 0),
-                        new THREE.MeshStandardMaterial({
-                            color: 0x4A148C,
-                            emissive: 0x311B92,
-                            emissiveIntensity: 0.7
-                        })
+                        this.geometries.shadowBasicTop, // Use cached geometry
+                        shadowCoreMaterial // Use cached material
                     );
                     shadowCore.position.y = 0.9;
                     shadowGroup.add(shadowCore);
@@ -1454,13 +1533,8 @@ export class Renderer {
                     if (level === 'advanced') {
                         // Add extra void sphere
                         const voidSphere = new THREE.Mesh(
-                            new THREE.SphereGeometry(0.4, 12, 12),
-                            new THREE.MeshBasicMaterial({
-                                color: 0x7E57C2,
-                                transparent: true,
-                                opacity: 0.3,
-                                side: THREE.BackSide
-                            })
+                            this.geometries.shadowAdvancedVoid, // Use cached geometry
+                            this.materials.towerSpecial['shadowAdvancedVoid'] // Use cached material
                         );
                         voidSphere.position.y = 0.9;
                         shadowGroup.add(voidSphere);
@@ -1472,8 +1546,8 @@ export class Renderer {
                 default:
                     // Fallback to basic tower shape
                     top = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.3, 0.6, 8),
-                        topMaterial
+                        this.geometries.defaultTop, // Use cached geometry
+                        topMaterial // Use cached material
                     );
                     top.position.y = 0.9;
             }
@@ -1485,8 +1559,7 @@ export class Renderer {
                     const arrowGroup = new THREE.Group();
 
                     // Base top shape
-                    const topGeometry = new THREE.ConeGeometry(0.3, 0.6, 8);
-                    const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+                    const topMesh = new THREE.Mesh(this.geometries.arrowTopBase, topMaterial); // Use cached
                     topMesh.position.y = 0.9; // Position above the base
                     arrowGroup.add(topMesh);
 
@@ -1496,8 +1569,8 @@ export class Renderer {
 
                     // Add an arrow-shaped nose (bigger)
                     const arrowNose = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.15, 0.5, 8),
-                        topMaterial
+                        this.geometries.arrowNose, // Use cached geometry
+                        topMaterial // Use same material as top base
                     );
 
                     // Position the arrow nose inside the rotation group
@@ -1518,19 +1591,14 @@ export class Renderer {
                 case 'doubleArrow':
                     // Double-pointed top for double arrow tower
                     const doubleTopGroup = new THREE.Group();
+                    const coneGeometry = this.geometries.doubleArrowTopCone; // Reuse geometry
 
                     // Base cone structures
-                    const cone1 = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.25, 0.5, 8),
-                        topMaterial
-                    );
+                    const cone1 = new THREE.Mesh(coneGeometry, topMaterial); // Use cached
                     cone1.position.set(0.2, 0.7, 0);
                     cone1.rotation.z = Math.PI/10;
 
-                    const cone2 = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.25, 0.5, 8),
-                        topMaterial
-                    );
+                    const cone2 = new THREE.Mesh(coneGeometry, topMaterial); // Use cached
                     cone2.position.set(-0.2, 0.7, 0);
                     cone2.rotation.z = -Math.PI/10;
 
@@ -1542,19 +1610,14 @@ export class Renderer {
 
                     // Create the double arrow nose inside the rotation group
                     const doubleArrowNoseGroup = new THREE.Group();
+                    const noseArrowGeometry = this.geometries.doubleArrowNose; // Reuse geometry
 
                     // Create two bigger arrows side by side
-                    const noseArrow1 = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.12, 0.4, 8),
-                        topMaterial
-                    );
+                    const noseArrow1 = new THREE.Mesh(noseArrowGeometry, topMaterial); // Use cached
                     noseArrow1.position.set(0.12, 0.15, 0);
                     noseArrow1.rotation.x = -Math.PI/2; // Point forward
 
-                    const noseArrow2 = new THREE.Mesh(
-                        new THREE.ConeGeometry(0.12, 0.4, 8),
-                        topMaterial
-                    );
+                    const noseArrow2 = new THREE.Mesh(noseArrowGeometry, topMaterial); // Use cached
                     noseArrow2.position.set(-0.12, 0.15, 0);
                     noseArrow2.rotation.x = -Math.PI/2; // Point forward
 
@@ -1574,10 +1637,7 @@ export class Renderer {
                     // Sphere and cylinder for cannon tower
                     const cannonGroup = new THREE.Group();
 
-                    const sphere = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.35, 12, 12),
-                        topMaterial
-                    );
+                    const sphere = new THREE.Mesh(this.geometries.cannonTopSphere, topMaterial); // Use cached
                     sphere.position.y = 0.9;
 
                     // Create a rotation group for the nose (barrel) that will rotate
@@ -1586,12 +1646,8 @@ export class Renderer {
 
                     // Create barrel which will serve as the rotatable nose
                     const barrel = new THREE.Mesh(
-                        new THREE.CylinderGeometry(0.2, 0.2, 0.6, 12),
-                        new THREE.MeshStandardMaterial({
-                            color: 0x212121,
-                            roughness: 0.3,
-                            metalness: 0.9
-                        })
+                        this.geometries.cannonBarrel, // Use cached geometry
+                        this.materials.towerSpecial['cannonBarrel'] // Use cached material
                     );
 
                     // Position and orient barrel inside the rotation group
@@ -1615,18 +1671,21 @@ export class Renderer {
                 default:
                     // Default simple top
                     top = new THREE.Mesh(
-                        new THREE.BoxGeometry(0.4, 0.4, 0.4),
-                        topMaterial
+                        this.geometries.defaultTop, // Use cached geometry
+                        topMaterial // Use cached material
                     );
                     top.position.y = 0.9;
             }
         }
 
         // Enhanced shadow settings for tower tops
+        // Apply shadow casting to the top-level group and let traverse handle children
         top.castShadow = true;
         top.receiveShadow = true;
 
-        // Make sure all parts of nested groups can cast shadows
+        // Make sure all parts of nested groups can cast shadows (if needed)
+        // This might be redundant if the top group itself casts shadow,
+        // but explicit setting ensures correctness. Revisit if performance issues arise.
         if (top.isGroup) {
             top.traverse(child => {
                 if (child.isMesh) {
@@ -1647,18 +1706,18 @@ export class Renderer {
 
         // Add a glow effect only to special towers
         if (isSpecialTower) {
-            // Create glow mesh
-            const glowGeometry = new THREE.SphereGeometry(0.9, 16, 16);
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: elementStyle.particleColor,
-                transparent: true,
-                opacity: 0.3,
-                side: THREE.BackSide,
-                depthWrite: false, // Don't write to depth buffer for better shadow rendering
-                blending: THREE.AdditiveBlending // Enhanced glow effect
-            });
+            // Create glow mesh using cached geometry and base material
+            const glowMaterial = this.materials.towerGlow.clone(); // Clone base glow material
+             const elementStyle = ElementStyles[elementKey];
+             if (elementStyle && elementStyle.particleColor) {
+                 glowMaterial.color.setHex(elementStyle.particleColor); // Set specific color
+             } else {
+                 glowMaterial.color.setHex(0xFFFFFF); // Default white glow if no style found
+             }
+             glowMaterial.needsUpdate = true; // Important after cloning and modification
 
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+
+            const glow = new THREE.Mesh(this.geometries.towerGlow, glowMaterial); // Use cached geometry
             glow.position.y = 1.0; // Position at the top part - higher now for taller towers
             glow.renderOrder = 5; // Ensure proper rendering order
             towerGroup.add(glow);
@@ -1666,67 +1725,58 @@ export class Renderer {
 
         // For more powerful towers or elemental types, add particle effects
         if (isSpecialTower) {
+            // Particle creation logic remains largely the same,
+            // but could potentially reuse BufferGeometry attributes if particles are identical
+            // For now, keeping particle creation dynamic as it might vary significantly.
+
             const particleGeometry = new THREE.BufferGeometry();
             const particleCount = 10;
             const particlePositions = new Float32Array(particleCount * 3);
+            const particleColors = new Float32Array(particleCount * 3); // Add colors
+
+            const elementStyle = ElementStyles[elementKey];
+            const particleColor = new THREE.Color(elementStyle ? elementStyle.particleColor : 0xFFFFFF);
 
             // Create particles around the tower
             for (let i = 0; i < particleCount; i++) {
                 const i3 = i * 3;
-                // Random position in a sphere
-                const radius = 0.6 + Math.random() * 0.3;
-                const theta = Math.random() * Math.PI * 2;
-                const phi = Math.random() * Math.PI;
+                // Random position in a sphere shell
+                 const radius = 0.7 + Math.random() * 0.2; // Slightly larger radius
+                 const theta = Math.random() * Math.PI * 2;
+                 const phi = Math.acos(2 * Math.random() - 1); // More uniform sphere distribution
+
 
                 particlePositions[i3] = radius * Math.sin(phi) * Math.cos(theta);
-                particlePositions[i3 + 1] = 0.5 + Math.random() * 0.5; // Y position
+                particlePositions[i3 + 1] = 1.0 + radius * Math.cos(phi); // Center around y=1.0
                 particlePositions[i3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+
+                // Set color
+                particleColors[i3] = particleColor.r;
+                particleColors[i3 + 1] = particleColor.g;
+                particleColors[i3 + 2] = particleColor.b;
             }
 
             particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3)); // Set color attribute
 
             const particleMaterial = new THREE.PointsMaterial({
-                color: elementStyle.particleColor,
-                size: 0.1,
+                size: 0.15, // Larger particle size
+                sizeAttenuation: true,
+                // color: elementStyle ? elementStyle.particleColor : 0xFFFFFF, // Use vertex colors instead
+                vertexColors: true, // Enable vertex colors
                 transparent: true,
                 opacity: 0.7,
-                blending: THREE.AdditiveBlending
+                blending: THREE.AdditiveBlending,
+                depthWrite: false // Prevent particles writing to depth buffer
             });
 
             const particles = new THREE.Points(particleGeometry, particleMaterial);
+            particles.userData.isParticleSystem = true; // Flag for potential updates
             towerGroup.add(particles);
-
-            // Store animation data
-            towerGroup.userData.particles = particles;
-            towerGroup.userData.particleAnimationPhase = Math.random() * Math.PI * 2;
+            towerGroup.userData.particles = particles; // Store reference for animation/updates
         }
 
-        // Add tower range indicator (circle with better visibility)
-        const rangeGeometry = new THREE.RingGeometry(tower.range - 0.05, tower.range, 32);
-        const rangeMaterial = new THREE.MeshBasicMaterial({
-            color: elementStyle.particleColor,
-            transparent: true,
-            opacity: 0.3,
-            side: THREE.DoubleSide
-        });
 
-        const rangeIndicator = new THREE.Mesh(rangeGeometry, rangeMaterial);
-        rangeIndicator.rotation.x = -Math.PI / 2; // Rotate to horizontal
-        rangeIndicator.position.y = 0.02; // Slightly above ground
-        rangeIndicator.visible = false; // Hidden by default
-
-        towerGroup.add(rangeIndicator);
-        towerGroup.userData.rangeIndicator = rangeIndicator;
-
-        // Debug to check if the nose reference is properly set
-        // if (towerGroup.userData.nose) {
-        //     console.log(`Tower ${tower.type} has nose set in userData`);
-        // } else {
-        //     // This is a critical issue - the nose reference is missing
-        //     console.warn(`Tower ${tower.type} is missing nose in userData`);
-        // }
-
-        this.scene.add(towerGroup);
         return towerGroup;
     }
 
@@ -2539,9 +2589,9 @@ export class Renderer {
         // Get all tower meshes
         this.scene.traverse(object => {
             if (object.isMesh &&
-                (object.material === this.materials.arrow ||
-                 object.material === this.materials.doubleArrow ||
-                 object.material === this.materials.cannon)) {
+                (object.material === this.materials.towerBases[ElementTypes.ARROW] ||
+                 object.material === this.materials.towerTops[ElementTypes.DOUBLE_ARROW] ||
+                 object.material === this.materials.towerTops[ElementTypes.CANNON])) {
 
                 // Create glow effect for this tower
                 const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
