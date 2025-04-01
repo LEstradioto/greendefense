@@ -1,5 +1,6 @@
 import { Projectile } from './projectile.js';
 import { ElementTypes, ElementalAdvantages, ElementEffects } from '../elements.js';
+import * as THREE from 'three';
 
 export class Tower {
     constructor(game, type, position, gridPosition, element = ElementTypes.NEUTRAL, stats = null) {
@@ -288,51 +289,37 @@ export class Tower {
     }
 
     rotateTowardTarget(target) {
-        // Check if this tower has a nose component to rotate
-        if (this.mesh && this.mesh.userData.nose) {
-            const nose = this.mesh.userData.nose;
+        if (!target || !this.mesh) return;
 
-            // Remove all debug logs once working
-            //console.log(`Tower type: ${this.type}, rotating nose`);
+        const targetPosition = target.position;
+        const towerPosition = this.mesh.position;
 
             // Calculate angle to target
-            const dx = target.position.x - this.position.x;
-            const dz = target.position.z - this.position.z;
+        const dx = targetPosition.x - towerPosition.x;
+        const dz = targetPosition.z - towerPosition.z;
+        const angle = Math.atan2(dx, dz); // Angle in radians
 
-            // Use correct angle calculation for Three.js coordinate system
-            const targetAngle = Math.atan2(dx, dz);
-
-            // Apply rotation directly (simple approach)
-            nose.rotation.y = targetAngle;
-
-            // Store the target on the tower for debugging
-            this.lastTarget = target;
+        // Determine the object to rotate
+        let objectToRotate;
+        if (this.mesh.userData && this.mesh.userData.nose) {
+            // If a specific 'nose' part exists, rotate that
+            objectToRotate = this.mesh.userData.nose;
+            // console.log(`Rotating nose for ${this.type}`); // Debug log
         } else {
-            console.warn(`Tower rotation failed - no nose for ${this.type} tower`);
-
-            // Debug structure of mesh to locate nose
-            if (this.mesh) {
-                console.log(`Tower mesh structure:`, JSON.stringify({
-                    type: this.type,
-                    hasUserData: !!this.mesh.userData,
-                    userDataKeys: Object.keys(this.mesh.userData || {})
-                }));
-
-                // Traverse mesh looking for nose
-                let foundNose = false;
-                this.mesh.traverse(obj => {
-                    if (obj.userData && obj.userData.nose) {
-                        foundNose = true;
-                        console.log(`Found nose in child object. Using it for rotation.`);
-                        this.mesh.userData.nose = obj.userData.nose;
-                    }
-                });
-
-                if (!foundNose) {
-                    console.error(`No nose found in tower mesh hierarchy`);
-                }
-            }
+            // Otherwise, rotate the entire tower mesh
+            objectToRotate = this.mesh;
+            // console.log(`Rotating main mesh for ${this.type}`); // Debug log
         }
+
+        // Smoothly rotate the object towards the target angle (Y-axis rotation)
+        // Use slerp for smoother rotation, especially for large angle changes
+        const currentQuaternion = new THREE.Quaternion().copy(objectToRotate.quaternion);
+        const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+
+        // Adjust rotation speed (higher value = faster rotation)
+        const rotationSpeed = 0.1;
+        currentQuaternion.slerp(targetQuaternion, rotationSpeed);
+        objectToRotate.quaternion.copy(currentQuaternion);
     }
 
     applyElementalSpecialEffects(target) {

@@ -238,7 +238,7 @@ export class Enemy {
             // Process only 30% of the time at low FPS to improve performance
             return;
         }
-        
+
         // Process all active status effects
         for (let i = this.statusEffects.length - 1; i >= 0; i--) {
             const effect = this.statusEffects[i];
@@ -254,10 +254,10 @@ export class Enemy {
                     if (effect.timeSinceLastTick >= effect.tickInterval) {
                         this.takeDamage(effect.damagePerTick, true); // true = from DOT effect
                         effect.timeSinceLastTick = 0;
-                        
+
                         // Skip visual effects when FPS is low
                         if (!(this.game.fpsCounter && this.game.fpsCounter.value < 45)) {
-                            this.createBurnEffect();
+                            this.createBurnEffectVisual();
                         }
                     }
                     break;
@@ -481,27 +481,27 @@ export class Enemy {
 
         // Skip recalculation if enemy has reached the end
         if (this.reachedEnd) return;
-        
+
         // Track pathfinding calls for debugging
         if (this.game._pathfindingCalls !== undefined) {
             this.game._pathfindingCalls++;
         }
-        
+
         // Check for a cached path first (based on start and end positions)
         const startX = Math.round(this.position.x);
         const startZ = Math.round(this.position.z);
         const endX = Math.round(this.targetPosition.x);
         const endZ = Math.round(this.targetPosition.z);
-        
+
         const pathKey = `${startX},${startZ}-${endX},${endZ}`;
-        
+
         // Make sure we're using a proper JavaScript Map object and not a regular object
         if (this.game.cachedPaths && typeof this.game.cachedPaths.has === 'function' && this.game.cachedPaths.has(pathKey)) {
             // Use cached path
             this.path = [...this.game.cachedPaths.get(pathKey)];
             return;
         }
-        
+
         // Check if too many pathfinding calls recently - use simpler path if FPS is low
         if (this.game.fpsCounter && this.game.fpsCounter.value < 30) {
             // Simple direct path for performance
@@ -514,13 +514,13 @@ export class Enemy {
 
         // Calculate a new path
         await this.calculatePath(0); // Start with recursion depth 0
-        
+
         // Cache the path for reuse if we have a valid Map object
         if (this.path && this.path.length > 0 && this.game.cachedPaths && typeof this.game.cachedPaths.set === 'function') {
             try {
                 // Store path copy in cache
                 this.game.cachedPaths.set(pathKey, [...this.path]);
-                
+
                 // Limit cache size to prevent memory issues
                 if (this.game.cachedPaths.size > 100 && typeof this.game.cachedPaths.keys === 'function') {
                     // Remove oldest entry (first key)
@@ -664,14 +664,14 @@ export class Enemy {
         if (this.game._pathfindingCalls !== undefined) {
             this.game._pathfindingCalls++;
         }
-        
+
         // Skip expensive pathfinding if FPS is low
         if (this.game.fpsCounter && this.game.fpsCounter.value < 25) {
             // Use simpler path calculation during performance issues
             this.findFallbackPath();
             return;
         }
-        
+
         // Prevent stack overflow with a recursion limit
         const MAX_RECURSION_DEPTH = 3;
         if (recursionDepth >= MAX_RECURSION_DEPTH) {

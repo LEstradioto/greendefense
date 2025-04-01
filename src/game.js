@@ -40,7 +40,7 @@ export class Game {
         this.player = {
             username: '',
             gold: 100,
-            lives: 20,
+            lives: 5,
             score: 0
         };
 
@@ -68,7 +68,7 @@ export class Game {
 
         // Progressive difficulty tracking
         this.consecutiveWavesWithoutLosses = 0; // Track waves completed without losing lives
-        this.initialLives = 20; // Store initial lives value
+        this.initialLives = 5; // Store initial lives value
         this.difficultyIncreaseActive = false; // Track if difficulty has been increased
 
         // Game balance settings
@@ -87,18 +87,18 @@ export class Game {
 
         // Per-wave difficulty settings
         this.waveSettings = [
-            { enemyHealth: 1.0, enemySpeed: 1.0, enemyCount: 10, goldMultiplier: 1.0, spawnBoss: false, batchSpawning: false },  // Wave 1
-            { enemyHealth: 1.2, enemySpeed: 1.0, enemyCount: 15, goldMultiplier: 1.2, spawnBoss: false, batchSpawning: false },  // Wave 2
-            { enemyHealth: 1.5, enemySpeed: 1.1, enemyCount: 20, goldMultiplier: 1.4, spawnBoss: false, batchSpawning: true },   // Wave 3
-            { enemyHealth: 3.0, enemySpeed: 1.3, enemyCount: 35, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4 - Much higher health, more enemies
-            { enemyHealth: 4.5, enemySpeed: 1.4, enemyCount: 50, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true },    // Wave 5 - Significantly increased health and count
-            { enemyHealth: 6.0, enemySpeed: 1.5, enemyCount: 80, goldMultiplier: 2.0, spawnBoss: true, batchSpawning: true }     // Wave 6 - Massive wave with very tough enemies
+            { enemyHealth: 1.0, enemySpeed: 1.0, enemyCount: 15, goldMultiplier: 1.0, spawnBoss: false, batchSpawning: false },  // Wave 1
+            { enemyHealth: 1.2, enemySpeed: 1.0, enemyCount: 30, goldMultiplier: 1.2, spawnBoss: false, batchSpawning: false },  // Wave 2
+            { enemyHealth: 1.75, enemySpeed: 1.25, enemyCount: 50, goldMultiplier: 1.4, spawnBoss: false, batchSpawning: true },   // Wave 3
+            { enemyHealth: 5.0, enemySpeed: 1.4, enemyCount: 70, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4 - Much higher health, more enemies
+            { enemyHealth: 5.5, enemySpeed: 1.45, enemyCount: 90, goldMultiplier: 1.7, spawnBoss: true, batchSpawning: true },    // Wave 5 - Significantly increased health and count
+            { enemyHealth: 6.0, enemySpeed: 1.55, enemyCount: 120, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true }     // Wave 6 - Massive wave with very tough enemies
         ];
 
         // Game timing
         this.lastFrameTime = 0;
         this.deltaTime = 0;
-        this.enemySpawnInterval = 2000; // ms
+        this.enemySpawnInterval = 1000; // ms
         this.lastEnemySpawnTime = 0;
         // Enemy counts now defined in waveSettings
         this.enemiesSpawned = 0;
@@ -275,7 +275,7 @@ export class Game {
                         // Apply batch spawning logic if enabled for this wave
                         if (waveSettings.batchSpawning) {
                             // For waves 4-6, use enhanced challenging batch spawning
-                            if (waveInfo.waveNumber >= 4) {
+                            if (waveInfo.waveNumber >= 3) {
                                 // More intense spawning patterns for higher waves
                                 const waveIntensity = waveInfo.waveNumber - 3; // 1 for wave 4, 2 for wave 5, 3 for wave 6
 
@@ -470,6 +470,10 @@ export class Game {
         // If we're force-sending and there's a wave in progress, increment the current wave
         if (forceSend && this.waveInProgress) {
             this.currentWave = nextWaveNumber;
+            // Manually trigger TCG turn start when forcing next wave
+            if (this.tcgIntegration) {
+                this.tcgIntegration.startTurn();
+            }
         }
 
         // Initialize tracking variables for the new wave
@@ -1452,7 +1456,7 @@ export class Game {
 
         // Reset player stats
         this.player.gold = 100;
-        this.player.lives = 20;
+        this.player.lives = 5;
         this.player.score = 0;
 
         // Reset wave counters

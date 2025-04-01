@@ -47,19 +47,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return tracks;
         };
 
-        // Shuffle the tracks once at start
-        const shuffledTracks = shuffleTracks([...musicTracks]);
-        let currentTrackIndex = 0; // Start with first track in shuffled list
+        // Play tracks in sequence instead of shuffling
+        // const shuffledTracks = shuffleTracks([...musicTracks]);
+        const tracksToPlay = [...musicTracks]; // Use original order
+        let currentTrackIndex = 0; // Start with first track
 
-        // Play a track from the shuffled list
-        const playRandomTrack = () => {
-            backgroundMusic.src = shuffledTracks[currentTrackIndex];
+        // Play the current track from the sequence
+        const playCurrentTrack = () => {
+            backgroundMusic.src = tracksToPlay[currentTrackIndex];
             backgroundMusic.volume = 0.15; // Lower volume further from 0.2 to 0.15
             backgroundMusic.load();
             backgroundMusic.play().catch(err => {});
 
             // Show track name
-            const trackName = shuffledTracks[currentTrackIndex].split('/').pop().split('.')[0];
+            const trackName = tracksToPlay[currentTrackIndex].split('/').pop().split('.')[0];
             showTrackInfo(trackName);
         };
 
@@ -97,8 +98,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // When current track ends, play the next one
         backgroundMusic.addEventListener('ended', () => {
-            currentTrackIndex = (currentTrackIndex + 1) % shuffledTracks.length;
-            playRandomTrack();
+            // Increment to the next track sequentially (not randomly)
+            currentTrackIndex = (currentTrackIndex + 1) % tracksToPlay.length;
+            console.log(`Playing next track: ${currentTrackIndex + 1}/${tracksToPlay.length}`);
+            playCurrentTrack();
         });
 
         // Add FX toggle button to the audio-controls div
@@ -240,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         // Set initial volume and play the first track
-        playRandomTrack();
+        playCurrentTrack();
 
         // Set up music toggle button
         if (musicButton) {
