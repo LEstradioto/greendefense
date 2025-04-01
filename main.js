@@ -195,11 +195,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // Pick a random sound from the category
+                // Pick a random sound index from the category
                 const urlIndex = Math.floor(Math.random() * soundUrls[soundType].length);
+                const cacheKey = `${soundType}_${urlIndex}`;
 
-                // Create a fresh sound to allow independent playback and pitch variation
-                const sound = new Audio(soundUrls[soundType][urlIndex]);
+                // Get the cached sound
+                const cachedSound = soundCache[cacheKey];
+
+                if (!cachedSound) {
+                    console.warn(`Sound not found in cache: ${cacheKey}`);
+                    return;
+                }
+
+                // Clone the cached audio element to allow overlapping sounds
+                const sound = cachedSound.cloneNode();
 
                 // Set extremely low base volumes for all sound types
                 let baseVolume;
@@ -212,34 +221,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Add substantial volume variation to make sounds less repetitive
-                // Sometimes make sound nearly silent or completely silent
                 const volumeVariation = Math.random();
 
-                // 10% chance for no sound at all - i.e., skip playing
+                // 10% chance for no sound at all
                 if (volumeVariation < 0.1) {
                     return; // Skip playing this sound completely
                 }
 
                 // 20% chance for very quiet sound
                 if (volumeVariation < 0.3) {
-                    sound.volume = baseVolume * 0.3; // Very quiet (6-9% volume)
+                    sound.volume = baseVolume * 0.3;
                 } else {
-                    // Normal case: variable volume based on random factor
-                    sound.volume = baseVolume * (0.5 + (volumeVariation * 0.5)); // 50-100% of base volume
+                    // Normal case: variable volume
+                    sound.volume = baseVolume * (0.5 + (volumeVariation * 0.5));
                 }
 
-                // Add pitch variation to avoid audio fatigue
-                // More variation for frequently played sounds
+                // Add pitch variation
                 if (soundType === 'towerShoot') {
-                    sound.playbackRate = 0.85 + (Math.random() * 0.4); // Wider range: 0.85-1.25
+                    sound.playbackRate = 0.85 + (Math.random() * 0.4);
                 } else {
-                    sound.playbackRate = 0.9 + (Math.random() * 0.3); // 0.9-1.2 range
+                    sound.playbackRate = 0.9 + (Math.random() * 0.3);
                 }
 
-                // Play the sound with error handling
-                sound.play().catch(err => {});
+                // Play the cloned sound
+                sound.play().catch(err => {
+                    // Ignore errors like "DOMException: The play() request was interrupted..."
+                    // which can happen if sounds are triggered very rapidly.
+                });
             } catch (err) {
-                // Silently fail - sound effects aren't critical
+                console.error("Error in playSound:", err);
             }
         };
 
