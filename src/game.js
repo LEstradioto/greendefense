@@ -1,7 +1,7 @@
 import { Renderer } from './renderer.js';
 import { Map } from './map.js';
 import { PowerCards } from './powerCards.js';
-import { Enemy } from './entities/enemy/index.js';
+import { Enemy } from './entities/enemy.js';
 import { Tower } from './entities/tower.js';
 import { TCGIntegration } from './tcg-integration.js';
 import { UI } from './ui.js';
