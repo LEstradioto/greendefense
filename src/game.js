@@ -6,6 +6,7 @@ import { Tower } from './entities/tower.js';
 import { TCGIntegration } from './tcg-integration.js';
 import { UI } from './ui.js';
 import { ElementTypes, ElementEffects, ElementStyles } from './elements.js';
+import { Projectile } from './entities/projectile.js';
 
 export class Game {
     constructor(canvas) {
@@ -21,6 +22,24 @@ export class Game {
         this.enemyPool = [];
         this.projectilePool = [];
         this.particlePool = [];
+
+        // Animation system
+        this.animations = [];
+        this.animationIdCounter = 0;
+
+        // Performance tracking
+        this.frameCount = 0;
+        this.criticalPerformance = false;
+        this.performanceMode = 'normal'; // 'normal', 'low', 'critical'
+        this.performanceCheckInterval = 60; // Check every ~1s at 60fps
+        this.lastPerformanceUpdate = 0;
+
+        // Shared resources to reduce object creation
+        this.sharedResources = {
+            // Pre-generate common textures used for effects
+            soulTexture: this.createSoulTexture(),
+            // Add more shared resources as needed
+        };
 
         // Maximum number of entities to keep performance stable
         this.maxActiveProjectiles = 100; // Reduced limit to prevent visual clutter
@@ -114,6 +133,10 @@ export class Game {
 
         // UI and TCG System will be initialized after map is ready
         this.tcgIntegration = null;
+
+        // Initialize projectile pool
+        this.projectilePool = [];
+        this.maxPoolSize = 300; // Maximum size of the projectile pool
     }
 
     async start(username) {
@@ -226,8 +249,14 @@ export class Game {
             return;
         }
 
+        // Update frame tracking
+        this.frameCount++;
+
         // Update FPS counter
         this.updateFpsCounter(currentTime);
+
+        // Check performance and adjust settings if needed
+        this.checkPerformance();
 
         // Calculate time delta
         this.deltaTime = (currentTime - this.lastFrameTime) / 1000; // convert to seconds
@@ -245,6 +274,9 @@ export class Game {
                 this.tcgIntegration.updateManaDisplay();
             }
         }
+
+        // Process animations
+        this.updateAnimations(currentTime);
 
         // Spawn enemies for active waves
         if (this.waveInProgress) {
@@ -1037,29 +1069,35 @@ export class Game {
 
             // Apply performance optimizations if needed
             if (shouldOptimize) {
-                // Distance-based level of detail - with null check
-                const distanceToCamera = enemy.mesh && this.renderer ?
-                    this.renderer.getDistanceToCamera(enemy.mesh.position) : 0;
+                // Distance-based level of detail
+                const distanceToCamera = this.renderer ?
+                    this.renderer.getDistanceToCamera(enemy.position) : 0;
 
                 if (distanceToCamera > 30) {
                     // Skip some updates for far enemies when FPS is low
-                    // Use dynamic skip rate based on performance - enemyUpdateSkipRate is set in FPS-based optimization
+                    // Use dynamic skip rate based on performance
                     const skipRate = this.enemyUpdateSkipRate || 3;
                     if (i % skipRate !== 0) continue; // Only update 1/skipRate of distant enemies each frame
 
-                    // Use simpler update for distant enemies if method exists
+                    // Use simpler update for distant enemies
                     if (typeof enemy.updateSimple === 'function') {
                         enemy.updateSimple(this.deltaTime);
                         continue;
                     }
 
-                    // If no updateSimple method, use minimal update (just position)
-                    // This skips status effects processing and other expensive operations
+                    // Fall back to minimal update
                     enemy.position.x += enemy.direction?.x * enemy.speed * this.deltaTime || 0;
                     enemy.position.z += enemy.direction?.z * enemy.speed * this.deltaTime || 0;
 
-                    if (enemy.mesh) {
-                        enemy.mesh.position.set(enemy.position.x, enemy.position.y, enemy.position.z);
+                    // Update position in instance or mesh
+                    if (enemy.enemyInstance) {
+                        enemy.enemyInstance.position.set(
+                            enemy.position.x, enemy.position.y, enemy.position.z
+                        );
+                    } else if (enemy.mesh) {
+                        enemy.mesh.position.set(
+                            enemy.position.x, enemy.position.y, enemy.position.z
+                        );
                     }
                     continue;
                 }
@@ -1086,7 +1124,7 @@ export class Game {
                     }
                 }
 
-                // Find the wave info for this enemy
+                // Update wave info
                 const waveNumber = enemy.waveNumber || this.currentWave;
                 const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
 
@@ -1094,11 +1132,10 @@ export class Game {
                     waveInfo.enemiesAlive--;
                 }
 
-                // Remove enemy mesh from scene
-                if (enemy.mesh) {
-                    this.renderer.scene.remove(enemy.mesh);
-                }
+                // Remove enemy from scene
+                this.removeEnemyVisuals(enemy);
 
+                // Remove from array
                 this.enemies.splice(i, 1);
                 this.updateUI();
 
@@ -1112,102 +1149,118 @@ export class Game {
                     this.endGame(false);
                 }
             }
-            // Check if enemy was defeated
-            else if (enemy.health <= 0) {
-                // Reward player with gold multipliers applied correctly
-                // First ensure the enemy has a valid base reward
-                if (!enemy.reward || isNaN(enemy.reward) || enemy.reward <= 0) {
-                    // Fix missing reward based on enemy type
-                    if (enemy.type.includes('golem')) {
-                        enemy.reward = 50;
-                    } else if (enemy.type.includes('pirate')) {
-                        enemy.reward = 25;
-                    } else if (enemy.type.includes('elephant')) {
-                        enemy.reward = 15;
-                    } else {
-                        enemy.reward = 10; // Default for 'simple' enemies
-                    }
-                }
+        }
+    }
 
-                // Get base reward
-                let baseReward = Math.round(enemy.reward);
+    // Handle enemy defeat (called from enemy.takeDamage)
+    defeatEnemy(enemy) {
+        // Ensure the enemy exists and isn't already processed
+        if (!enemy || enemy.isDefeated) return;
+        enemy.isDefeated = true;
 
-                // Apply multipliers
-                // 1. Apply per-wave gold multiplier if available
-                const waveIndex = this.currentWave - 1;
-                let finalReward = baseReward;
-                if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
-                    finalReward = Math.round(finalReward * this.waveSettings[waveIndex].goldMultiplier);
-                }
+        // Calculate reward (with all multipliers)
+        let baseReward = Math.round(enemy.reward || 10);
 
-                // 2. Apply global gold multiplier
-                if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
-                    finalReward = Math.round(finalReward * this.difficultySettings.goldMultiplier);
-                }
+        // Apply wave gold multiplier
+        const waveIndex = this.currentWave - 1;
+        let finalReward = baseReward;
+        if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
+            finalReward = Math.round(finalReward * this.waveSettings[waveIndex].goldMultiplier);
+        }
 
-                // Make sure the reward is at least the base value
-                finalReward = Math.max(baseReward, finalReward);
+        // Apply global gold multiplier
+        if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
+            finalReward = Math.round(finalReward * this.difficultySettings.goldMultiplier);
+        }
 
-                // Add the gold reward (with enhanced debug logging)
-                const oldGold = this.player.gold;
-                this.player.gold += finalReward;
-                this.player.score += finalReward;
+        // Add the gold reward
+        const oldGold = this.player.gold;
+        this.player.gold += finalReward;
+        this.player.score += finalReward;
 
-                // Status log removed
-                // Status log removed
+        // Ensure the gold is a valid number
+        if (isNaN(this.player.gold)) {
+            console.error("[GOLD DEBUG] Gold became NaN! Resetting to previous value");
+            this.player.gold = oldGold;
+        }
 
-                // Ensure the gold is a valid number
-                if (isNaN(this.player.gold)) {
-                    console.error("[GOLD DEBUG] Gold became NaN! Resetting to previous value");
-                    this.player.gold = oldGold;
-                }
-                this.enemiesDefeated++;
+        // Track enemy defeat
+        this.enemiesDefeated++;
 
-                // TCG mana bonus for special enemies
-                if (this.tcgIntegration && (
-                    enemy.type.includes('elemental') ||
-                    enemy.type.includes('fire') ||
-                    enemy.type.includes('water') ||
-                    enemy.type.includes('earth') ||
-                    enemy.type.includes('air') ||
-                    enemy.type.includes('shadow') ||
-                    enemy.type.includes('golem')
-                )) {
-                    // Special enemy defeated - give mana bonus
-                    const manaBonus = 2;
-                    this.tcgIntegration.mana = Math.min(
-                        this.tcgIntegration.maxMana,
-                        this.tcgIntegration.mana + manaBonus
-                    );
-                    this.tcgIntegration.updateManaDisplay();
+        // TCG mana bonus for special enemies
+        if (this.tcgIntegration && (
+            enemy.type.includes('elemental') ||
+            enemy.type.includes('fire') ||
+            enemy.type.includes('water') ||
+            enemy.type.includes('earth') ||
+            enemy.type.includes('air') ||
+            enemy.type.includes('shadow') ||
+            enemy.type.includes('golem')
+        )) {
+            // Special enemy defeated - give mana bonus
+            const manaBonus = 2;
+            this.tcgIntegration.mana = Math.min(
+                this.tcgIntegration.maxMana,
+                this.tcgIntegration.mana + manaBonus
+            );
+            this.tcgIntegration.updateManaDisplay();
 
-                    // Visual effect for mana bonus
-                    this.createManaBonusEffect(enemy.position);
-                }
+            // Visual effect for mana bonus
+            this.createManaBonusEffect(enemy.position);
+        }
 
-                // Find the wave info for this enemy
-                const waveNumber = enemy.waveNumber || this.currentWave;
-                const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
+        // Update wave info
+        const waveNumber = enemy.waveNumber || this.currentWave;
+        const waveInfo = this.activeWaves.find(w => w.waveNumber === waveNumber);
 
-                if (waveInfo) {
-                    waveInfo.enemiesAlive--;
-                    waveInfo.enemiesDefeated++;
-                }
+        if (waveInfo) {
+            waveInfo.enemiesAlive--;
+            waveInfo.enemiesDefeated++;
+        }
 
-                // Create soul effect when enemy dies
-                this.createSoulEffect(enemy);
+        // Create soul effect when enemy dies
+        this.createSoulEffect(enemy);
 
-                // Remove enemy mesh from scene
-                if (enemy.mesh) {
-                    this.renderer.scene.remove(enemy.mesh);
-                }
+        // Remove enemy visuals
+        this.removeEnemyVisuals(enemy);
 
-                this.enemies.splice(i, 1);
-                this.updateUI();
+        // Remove from enemies array
+        const index = this.enemies.indexOf(enemy);
+        if (index !== -1) {
+            this.enemies.splice(index, 1);
+        }
 
-                // Check wave completion
-                this.checkWaveCompletion(waveNumber);
+        // Update UI
+        this.updateUI();
+
+        // Check wave completion
+        this.checkWaveCompletion(waveNumber);
+    }
+
+    // Helper method to remove enemy visual elements
+    removeEnemyVisuals(enemy) {
+        // Clean up instance-based enemy
+        if (enemy.enemyInstance) {
+            this.renderer.removeEnemy(enemy);
+        }
+        // Legacy cleanup for mesh-based enemies
+        else if (enemy.mesh) {
+            this.renderer.scene.remove(enemy.mesh);
+
+            // Clean up geometries and materials
+            if (enemy.mesh.geometry) {
+                enemy.mesh.geometry.dispose();
             }
+
+            if (enemy.mesh.material) {
+                if (Array.isArray(enemy.mesh.material)) {
+                    enemy.mesh.material.forEach(m => m.dispose());
+                } else {
+                    enemy.mesh.material.dispose();
+                }
+            }
+
+            enemy.mesh = null;
         }
     }
 
@@ -1231,7 +1284,7 @@ export class Game {
 
         // Log for debugging - once per second to avoid console spam
         if (!this._lastProjectileDebugTime || performance.now() - this._lastProjectileDebugTime > 1000) {
-            console.log(`Active projectiles: ${this.projectiles.length}`);
+            // console.log(`Active projectiles: ${this.projectiles.length}`);
             this._lastProjectileDebugTime = performance.now();
         }
 
@@ -1263,7 +1316,7 @@ export class Game {
 
             // Ensure projectile mesh is in scene
             if (projectile.mesh && !this.renderer.scene.children.includes(projectile.mesh)) {
-                console.log(`Adding missing projectile mesh back to scene`);
+                // console.log(`Adding missing projectile mesh back to scene`);
                 this.renderer.scene.add(projectile.mesh);
             }
 
@@ -1275,9 +1328,9 @@ export class Game {
             if (projectile.hit || projectile.isOutOfBounds()) {
                 // Log hit status for debugging
                 if (projectile.hit) {
-                    console.log(`Projectile hit target or was manually marked as hit`);
+                    // console.log(`Projectile hit target or was manually marked as hit`);
                 } else {
-                    console.log(`Projectile out of bounds and being removed`);
+                    // console.log(`Projectile out of bounds and being removed`);
                 }
 
                 // Remove mesh from scene
@@ -1513,9 +1566,14 @@ export class Game {
         }
         this.enemies = [];
 
-        // Clean up towers
+        // Clean up towers using the new tower cleanup method
         for (let i = this.towers.length - 1; i >= 0; i--) {
-            if (this.towers[i].mesh) {
+            if (this.towers[i].cleanup) {
+                this.towers[i].cleanup();
+            } else if (this.towers[i].towerInstance) {
+                this.renderer.removeTower(this.towers[i].towerInstance);
+            } else if (this.towers[i].mesh) {
+                // Fallback for compatibility with old tower system
                 this.renderer.scene.remove(this.towers[i].mesh);
             }
         }
@@ -2416,66 +2474,61 @@ export class Game {
         // Create a visual message for difficulty increase
         if (!this.renderer) return;
 
-        const message = "DIFFICULTY INCREASED! Enemies are stronger now!";
+        const text = "Difficulty Increased!";
 
-        // Create a text canvas with sufficient width to prevent text cutting
+        // Create texture for sprite
         const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 128;
         const context = canvas.getContext('2d');
-        canvas.width = 2048; // Wide canvas to ensure text fits
-        canvas.height = 256;
 
-        // Ensure canvas is transparent
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        // Fill background
+        context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.strokeStyle = '#FF3333';
+        context.lineWidth = 4;
+        context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
 
-        // Draw message with warning styling
-        context.font = 'Bold 62px Arial, sans-serif'; // Larger font
+        // Add text
+        context.font = 'bold 64px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
 
-        // Enhanced glow effect - red warning
-        context.shadowColor = '#FF3300';
-        context.shadowBlur = 25;
-        context.shadowOffsetX = 0;
-        context.shadowOffsetY = 0;
+        // Add a red glow by drawing text multiple times
+        context.fillStyle = 'rgba(255, 0, 0, 0.3)';
+        context.fillText(text, canvas.width / 2 + 3, canvas.height / 2 + 3);
+        context.fillText(text, canvas.width / 2 - 3, canvas.height / 2 - 3);
 
-        // Draw warning text (red)
-        context.fillStyle = '#FF3300';
-        context.fillText(message, canvas.width / 2, canvas.height / 2);
+        // Draw the main text
+        context.fillStyle = '#FFFFFF';
+        context.fillText(text, canvas.width / 2, canvas.height / 2);
 
-        // Add a second layer for stronger effect
-        context.shadowBlur = 15;
-        context.fillStyle = '#FF5500';
-        context.fillText(message, canvas.width / 2, canvas.height / 2);
-
-        // Create texture and sprite
-        const texture = new THREE.Texture(canvas);
-        texture.needsUpdate = true;
-
+        // Create sprite
+        const texture = new THREE.CanvasTexture(canvas);
         const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
-            depthTest: false,
-            depthWrite: false
+            opacity: 1.0
         });
 
         const sprite = new THREE.Sprite(spriteMaterial);
-        // Position in center of map
-        sprite.position.set(0, 7, 0); // Higher than completion message
         sprite.scale.set(20, 5, 1);
+        sprite.position.set(0, 8, 0); // Position above the map
 
         this.renderer.scene.add(sprite);
 
-        // Animate with shaking effect and fade out
+        // Animation data
         const startTime = performance.now();
         const duration = 4000; // 4 seconds
 
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        // Add to the centralized animation system
+        this.addAnimationEffect({
+            startTime,
+            duration,
+            update: (progress) => {
                 // Add shaking effect for warning
                 if (progress < 0.7) {
+                    const elapsed = performance.now() - startTime;
                     sprite.position.x = Math.sin(elapsed * 0.02) * 0.3;
 
                     // Pulse size
@@ -2489,14 +2542,17 @@ export class Game {
                     spriteMaterial.opacity = 1 - fadeOutProgress;
                 }
 
-                requestAnimationFrame(animate);
-            } else {
-                // Remove sprite
-                this.renderer.scene.remove(sprite);
-            }
-        };
+                if (progress >= 1) {
+                    // Remove sprite
+                    this.renderer.scene.remove(sprite);
+                    texture.dispose();
+                    spriteMaterial.dispose();
+                    return true; // Animation complete
+                }
 
-        animate();
+                return false; // Animation still running
+            }
+        });
     }
 
     showWaveCompletionMessage(amount, waveNumber = this.currentWave) {
@@ -2595,113 +2651,169 @@ export class Game {
         animate();
     }
 
-    createSoulEffect(enemy) {
-        // Create a blue soul effect when enemy is defeated
-        if (!this.renderer || !enemy.mesh) return;
+    // Pre-generate soul texture only once for reuse
+    createSoulTexture() {
+        // Create a canvas for the sprite
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
 
-        // Create a simple blue sphere
-        const soulGeometry = new THREE.SphereGeometry(0.3, 8, 8);
-        const soulMaterial = new THREE.MeshBasicMaterial({
-            color: 0x3498db, // Bright blue
+        // Create a radial gradient for the soul with transparent background
+        const gradient = ctx.createRadialGradient(
+            64, 64, 0,
+            64, 64, 60
+        );
+        gradient.addColorStop(0, 'rgba(52, 152, 219, 0.9)'); // Blue core
+        gradient.addColorStop(0.6, 'rgba(52, 152, 219, 0.5)'); // Fading blue
+        gradient.addColorStop(1, 'rgba(52, 152, 219, 0)');     // Transparent edge
+
+        // Draw the soul
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Add a glow effect
+        ctx.globalCompositeOperation = 'lighter';
+        const glowGradient = ctx.createRadialGradient(
+            64, 64, 10,
+            64, 64, 40
+        );
+        glowGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = glowGradient;
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Create and return a texture from the canvas
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    createSoulEffect(enemy) {
+        // Create a soul effect when enemy is defeated using a sprite with alpha transparency
+        if (!this.renderer || !enemy.position) return;
+
+        // Reuse the pre-generated soul texture
+        const texture = this.sharedResources.soulTexture;
+        const spriteSize = 2;
+
+        // Create material with the shared texture
+        const material = new THREE.SpriteMaterial({
+            map: texture,
             transparent: true,
-            opacity: 0.7
+            blending: THREE.AdditiveBlending
         });
 
-        const soul = new THREE.Mesh(soulGeometry, soulMaterial);
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(spriteSize, spriteSize, 1);
 
         // Position at enemy location
-        soul.position.copy(enemy.mesh.position);
-        soul.position.y += 0.5; // Float slightly above
+        sprite.position.copy(enemy.position);
+        sprite.position.y += 0.5; // Float slightly above
 
-        this.renderer.scene.add(soul);
+        this.renderer.scene.add(sprite);
 
-        // Animate soul rising and fading
+        // Add to centralized animation system
         const startTime = performance.now();
-        const duration = 800; // 0.8 seconds - longer animation for visibility
+        const duration = 800; // 0.8 seconds - shorter for better performance
 
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        this.addAnimationEffect({
+            startTime,
+            duration,
+            update: (progress) => {
                 // Rise up
-                soul.position.y += 0.03;
+                sprite.position.y += 0.03;
 
-                // Pulsate slightly
-                const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 2);
-                soul.scale.set(scale, scale, scale);
-
-                // Fade out near the end
-                if (progress > 0.7) {
-                    const fadeProgress = (progress - 0.7) / 0.3;
-                    soulMaterial.opacity = 0.7 * (1 - fadeProgress);
+                // Pulsate slightly (skip this calculation at low FPS)
+                if (this.fpsCounter && this.fpsCounter.value > 40) {
+                    const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 2);
+                    sprite.scale.set(spriteSize * scale, spriteSize * scale, 1);
                 }
 
-                requestAnimationFrame(animate);
-            } else {
-                // Clean up
-                this.renderer.scene.remove(soul);
-                soulGeometry.dispose();
-                soulMaterial.dispose();
-            }
-        };
+                // Fade out near the end
+                if (progress > 0.6) {
+                    const fadeProgress = (progress - 0.6) / 0.4;
+                    material.opacity = 1 - fadeProgress;
+                }
 
-        animate();
+                if (progress >= 1) {
+                    // Clean up resources - only remove the sprite, don't dispose shared texture
+                    this.renderer.scene.remove(sprite);
+                    material.dispose();
+                    return true; // Animation complete
+                }
+
+                return false; // Animation still running
+            }
+        });
     }
 
     createManaBonusEffect(position) {
         // Create a visual mana bonus effect at the given position
+        if (!this.renderer || !position) return;
 
-        // Skip if no renderer or TCG not enabled
-        if (!this.renderer || !this.tcgIntegration) return;
-
-        // Create a mana orb effect
+        // Create a glowing blue orb
         const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16);
         const orbMaterial = new THREE.MeshBasicMaterial({
-            color: 0x3498db, // Mana blue color
+            color: 0x00AAFF,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
         });
 
         const orb = new THREE.Mesh(orbGeometry, orbMaterial);
-        orb.position.set(position.x, position.y + 1, position.z);
+        orb.position.copy(position);
+        orb.position.y += 0.5; // Position slightly above ground
 
         this.renderer.scene.add(orb);
 
-        // Add text showing +2
+        // Create a text sprite for the mana bonus
         const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
         const context = canvas.getContext('2d');
-        canvas.width = 64;
-        canvas.height = 32;
 
-        context.font = 'Bold 24px Arial';
-        context.fillStyle = '#3498db';
+        // Add gradient background (subtle)
+        const gradient = context.createRadialGradient(
+            128, 128, 10,
+            128, 128, 80
+        );
+        gradient.addColorStop(0, 'rgba(0, 170, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(0, 50, 255, 0)');
+
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Add mana text
+        context.font = 'bold 64px Arial';
         context.textAlign = 'center';
-        context.fillText('+2', 32, 24);
+        context.textBaseline = 'middle';
+        context.fillStyle = '#FFFFFF';
+        context.fillText('+1', canvas.width / 2, canvas.height / 2);
 
-        const texture = new THREE.Texture(canvas);
-        texture.needsUpdate = true;
-
+        // Create sprite
+        const texture = new THREE.CanvasTexture(canvas);
         const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
-            transparent: true
+            transparent: true,
+            opacity: 1.0,
+            blending: THREE.AdditiveBlending
         });
 
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(position.x, position.y + 1.5, position.z);
-        sprite.scale.set(0.75, 0.375, 1);
+        sprite.scale.set(2, 2, 1);
+        sprite.position.copy(position);
+        sprite.position.y += 1; // Above the orb
 
         this.renderer.scene.add(sprite);
 
-        // Animate and remove effect
+        // Animation data
         const startTime = performance.now();
         const duration = 1500; // 1.5 seconds
 
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        // Add to the centralized animation system
+        this.addAnimationEffect({
+            startTime,
+            duration,
+            update: (progress) => {
                 // Float upward
                 orb.position.y += 0.01;
                 sprite.position.y += 0.015;
@@ -2717,15 +2829,20 @@ export class Game {
                     spriteMaterial.opacity = 1 - fadeOutProgress;
                 }
 
-                requestAnimationFrame(animate);
-            } else {
-                // Remove effect
-                this.renderer.scene.remove(orb);
-                this.renderer.scene.remove(sprite);
-            }
-        };
+                if (progress >= 1) {
+                    // Remove effect
+                    this.renderer.scene.remove(orb);
+                    this.renderer.scene.remove(sprite);
+                    orbGeometry.dispose();
+                    orbMaterial.dispose();
+                    texture.dispose();
+                    spriteMaterial.dispose();
+                    return true; // Animation complete
+                }
 
-        animate();
+                return false; // Animation still running
+            }
+        });
     }
 
     createLifeFlashEffect() {
@@ -3046,5 +3163,230 @@ export class Game {
         setTimeout(() => {
             document.body.removeChild(container);
         }, 8000);
+    }
+
+    // Check performance and adjust settings dynamically
+    checkPerformance() {
+        // Only check periodically to avoid overhead
+        if (this.frameCount % this.performanceCheckInterval !== 0) {
+            return;
+        }
+
+        const now = performance.now();
+        const elapsed = now - this.lastPerformanceUpdate;
+        this.lastPerformanceUpdate = now;
+
+        // If we're checking every 60 frames, elapsed time should be ~1 second
+        // Calculate the actual FPS
+        const actualFPS = this.performanceCheckInterval / (elapsed / 1000);
+
+        // Store the FPS value
+        this.actualFPS = actualFPS;
+
+        // Set performance mode based on FPS
+        if (actualFPS < 15) { // Critically low performance
+            if (this.performanceMode !== 'critical') {
+                console.log('Critical performance mode activated');
+                this.performanceMode = 'critical';
+
+                // Apply extreme optimizations
+                this.lowQualityMode = true;
+
+                // Drastically reduce particles
+                this.maxParticles = 5;
+
+                // Reduce number of enemies allowed on screen
+                this.maxActiveEnemies = 50;
+
+                // Reduce projectiles
+                this.maxActiveProjectiles = 20;
+
+                // Tell renderer to use minimal quality settings
+                if (this.renderer.setQualityLevel) {
+                    this.renderer.setQualityLevel('critical');
+                }
+            }
+        } else if (actualFPS < 30) { // Low performance
+            if (this.performanceMode !== 'low') {
+                console.log('Low performance mode activated');
+                this.performanceMode = 'low';
+
+                // Apply standard optimizations
+                this.lowQualityMode = true;
+
+                // Reduce particles
+                this.maxParticles = 20;
+
+                // Other performance settings
+                this.enemyUpdateSkipRate = 2;
+
+                // Tell renderer to use low quality settings
+                if (this.renderer.setQualityLevel) {
+                    this.renderer.setQualityLevel('low');
+                }
+            }
+        } else if (actualFPS > 45 && this.performanceMode !== 'normal') {
+            // Return to normal quality when FPS recovers
+            console.log('Normal performance mode activated');
+            this.performanceMode = 'normal';
+            this.lowQualityMode = false;
+            this.maxParticles = 200;
+            this.enemyUpdateSkipRate = 3;
+
+            // Reset enemy and projectile limits
+            this.maxActiveEnemies = 150;
+            this.maxActiveProjectiles = 100;
+
+            // Tell renderer to use normal quality settings
+            if (this.renderer.setQualityLevel) {
+                this.renderer.setQualityLevel('normal');
+            }
+        }
+    }
+
+    // Update a method to handle adding animation effects to the centralized system
+    addAnimationEffect(animationConfig) {
+        // Skip adding animations in critical performance mode
+        if (this.performanceMode === 'critical' && Math.random() > 0.3) {
+            // Only add 30% of animations in critical mode
+            return -1; // Return -1 to indicate animation was skipped
+        }
+
+        // Skip non-essential animations in low performance mode (based on type if specified)
+        if (this.performanceMode === 'low' &&
+            animationConfig.type === 'decorative' &&
+            Math.random() > 0.6) {
+            // Only add 60% of decorative animations in low mode
+            return -1;
+        }
+
+        const id = this.animationIdCounter++;
+        this.animations.push({
+            id,
+            ...animationConfig,
+            completed: false
+        });
+        return id;
+    }
+
+    // Add a new method to update all animations
+    updateAnimations(currentTime) {
+        // Skip animation updates occasionally in critical performance mode
+        if (this.performanceMode === 'critical' && this.frameCount % 2 !== 0) {
+            return; // Skip every other frame
+        }
+
+        // Limit max animations in low performance
+        const maxAnimations = this.performanceMode === 'critical' ? 10 :
+                            (this.performanceMode === 'low' ? 30 : 100);
+
+        if (this.animations.length > maxAnimations) {
+            // Remove oldest animations to stay under the limit
+            this.animations = this.animations.slice(this.animations.length - maxAnimations);
+        }
+
+        // Update and filter out completed animations
+        this.animations = this.animations.filter(animation => {
+            if (animation.completed) return false;
+
+            const elapsed = currentTime - animation.startTime;
+            const progress = animation.duration === Infinity ? 0 : Math.min(elapsed / animation.duration, 1);
+
+            // Call the animation's update function
+            const completed = animation.update(progress, currentTime);
+
+            // Remove if completed
+            return !completed;
+        });
+
+        // Log animation count in debug mode for performance monitoring
+        if (this.debugMode && this.animations.length > 50) {
+            console.log(`High animation count: ${this.animations.length}`);
+        }
+    }
+
+    // Add this method to get a projectile from the pool or create a new one
+    getProjectileFromPool(type, startPosition, target, damage, areaOfEffect = 0, element = 'neutral') {
+        // Check if there's a matching projectile in the pool
+        if (this.projectilePool && this.projectilePool.length > 0) {
+            for (let i = 0; i < this.projectilePool.length; i++) {
+                const pooledProjectile = this.projectilePool[i];
+                if (pooledProjectile.type === type) {
+                    // Remove from pool
+                    const projectile = this.projectilePool.splice(i, 1)[0];
+
+                    // Reset and update properties
+                    projectile.position = { ...startPosition };
+                    projectile.target = target;
+                    projectile.damage = damage;
+                    projectile.areaOfEffect = areaOfEffect;
+                    projectile.element = element;
+                    projectile.timeAlive = 0;
+                    projectile.hit = false;
+
+                    // Update mesh position
+                    if (projectile.mesh) {
+                        projectile.mesh.position.set(startPosition.x, startPosition.y, startPosition.z);
+                        projectile.mesh.visible = true;
+                    } else {
+                        // If mesh somehow got lost, recreate it
+                        projectile.mesh = this.renderer.createProjectile(projectile);
+                    }
+
+                    // Recalculate direction to target
+                    projectile.calculateDirection();
+
+                    // Add to active projectiles array
+                    this.projectiles.push(projectile);
+
+                    return projectile;
+                }
+            }
+        }
+
+        // Create a new projectile if none was found in the pool
+        const projectile = new Projectile(this, type, startPosition, target, damage, areaOfEffect, element);
+        this.projectiles.push(projectile);
+
+        return projectile;
+    }
+
+    // Method to return a projectile to the pool
+    returnProjectileToPool(projectile) {
+        if (!projectile) return;
+
+        // Remove from active projectiles
+        const index = this.projectiles.indexOf(projectile);
+        if (index !== -1) {
+            this.projectiles.splice(index, 1);
+        }
+
+        // Hide the mesh but keep it for reuse
+        if (projectile.mesh) {
+            projectile.mesh.visible = false;
+        }
+
+        // Initialize pool if it doesn't exist
+        if (!this.projectilePool) {
+            this.projectilePool = [];
+        }
+
+        // Add to pool if it's not at max capacity
+        if (this.projectilePool.length < this.maxPoolSize) {
+            this.projectilePool.push(projectile);
+        } else {
+            // Dispose of the projectile completely if pool is full
+            if (projectile.mesh) {
+                this.renderer.scene.remove(projectile.mesh);
+                if (projectile.mesh.geometry) projectile.mesh.geometry.dispose();
+                if (projectile.mesh.material) {
+                    if (Array.isArray(projectile.mesh.material)) {
+                        projectile.mesh.material.forEach(m => m.dispose());
+                    } else {
+                        projectile.mesh.material.dispose();
+                    }
+                }
+            }
+        }
     }
 }

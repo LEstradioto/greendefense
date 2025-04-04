@@ -1,4 +1,4 @@
-import { ElementTypes, ElementStyles, ElementEffects } from '../../elements.js';
+import { ElementTypes, ElementStyles, ElementEffects } from '../elements.js';
 
 export class Enemy {
     constructor(game, type, startPosition, element = ElementTypes.NEUTRAL, stats = null) {
@@ -36,12 +36,8 @@ export class Enemy {
         // Status effects
         this.statusEffects = [];
 
-        // Create 3D representation
-        this.mesh = this.game.renderer.createEnemy(this);
-        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
-
-        // Setup health bar - access the data stored in userData
-        this.healthBar = this.mesh.userData.healthBar;
+        // Create 3D representation using the enemy instance manager
+        this.enemyInstance = this.game.renderer.createEnemy(this);
 
         // Path recalculation timer
         this.lastPathRecalcTime = 0;
@@ -181,8 +177,28 @@ export class Enemy {
             this.reachedEnd = true;
         }
 
-        // Update mesh position
-        if (this.mesh) {
+        // Update instance position
+        if (this.enemyInstance) {
+            // Update the instance object's position (this is used by the EnemyInstanceManager)
+            this.enemyInstance.position.set(this.position.x, this.position.y, this.position.z);
+
+            // Update the actual rendered position in the instanced mesh
+            if (this.enemyInstance.baseType && this.enemyInstance.elementType && this.enemyInstance.instanceIndex !== undefined) {
+                this.game.renderer.enemyManager.updateEnemyPosition(
+                    this.enemyInstance.baseType,
+                    this.enemyInstance.elementType,
+                    this.enemyInstance.instanceIndex,
+                    this.position,
+                    this.enemyInstance.shadowIndex
+                );
+            }
+
+            // Update health bar
+            const healthPercent = this.health / this.maxHealth;
+            this.game.renderer.updateHealth(this, healthPercent);
+        }
+        // Legacy support for old mesh-based enemies
+        else if (this.mesh) {
             this.mesh.position.set(this.position.x, this.position.y, this.position.z);
 
             // Update health bar
@@ -198,37 +214,30 @@ export class Enemy {
 
         // Skip status effects for better performance
 
-        // Very simplified movement - just move toward next waypoint without fancy calculations
-        if (this.path && this.path.length > 0 && this.currentPathIndex < this.path.length) {
-            const target = this.path[this.currentPathIndex];
-
-            // Direct movement toward target
-            const dx = target.x - this.position.x;
-            const dz = target.y - this.position.z;
-            const dist = Math.sqrt(dx*dx + dz*dz);
-
-            if (dist > 0.1) {
-                // Move directly toward target
-                this.position.x += (dx / dist) * this.speed * deltaTime;
-                this.position.z += (dz / dist) * this.speed * deltaTime;
-            } else {
-                // Reached waypoint, move to next
-                this.currentPathIndex++;
-            }
-        }
+        // Move along path
+        this.followPath(deltaTime);
 
         // Check if at the bottom edge of the map (reached end)
         if (!this.reachedEnd && this.position.z > (this.game.map.gridHeight / 2) - 1.5) {
             this.reachedEnd = true;
         }
 
-        // Update mesh position without any visual effects
-        if (this.mesh) {
-            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+        // Only update mesh position (no health bar update)
+        if (this.enemyInstance) {
+            this.enemyInstance.position.set(this.position.x, this.position.y, this.position.z);
 
-            // Update health bar
-            const healthPercent = this.health / this.maxHealth;
-            this.game.renderer.updateHealthBar(this.healthBar, healthPercent);
+            // Update the actual rendered position in the instanced mesh
+            if (this.enemyInstance.baseType && this.enemyInstance.elementType && this.enemyInstance.instanceIndex !== undefined) {
+                this.game.renderer.enemyManager.updateEnemyPosition(
+                    this.enemyInstance.baseType,
+                    this.enemyInstance.elementType,
+                    this.enemyInstance.instanceIndex,
+                    this.position,
+                    this.enemyInstance.shadowIndex
+                );
+            }
+        } else if (this.mesh) {
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
         }
     }
 
@@ -403,74 +412,58 @@ export class Enemy {
     }
 
     takeDamage(amount, isFromEffect = false) {
-        // Apply damage reduction from weaken effect
-        let actualDamage = amount;
+        // Apply damage
+        this.health -= amount;
 
-        // Apply damage modifiers from status effects
-        for (const effect of this.statusEffects) {
-            if (effect.type === 'weaken') {
-                actualDamage *= effect.damageModifier;
-            }
+        // Update health bar
+        if (this.health > 0) {
+            const healthPercent = this.health / this.maxHealth;
+            this.game.renderer.updateHealth(this, healthPercent);
         }
 
-        // Apply damage
-        this.health -= actualDamage;
-
-        // Ensure health doesn't go below 0
-        if (this.health < 0) this.health = 0;
-
-        // Create hit effect if not from a DOT effect (to avoid visual spam)
+        // Create damage indicator (smaller or no indicators for effect damage)
         if (!isFromEffect) {
-            this.createHitEffect(actualDamage);
+            this.createHitEffect(amount);
+        }
 
-            // Play enemy hit sound effect
-            if (window.playSound) {
-                window.playSound('enemyHit');
-            }
+        // Check if defeated
+        if (this.health <= 0) {
+            this.game.defeatEnemy(this);
         }
     }
 
     applyStatusEffect(effectType, effectParams) {
-        // Check if this enemy already has this effect type
-        const existingEffectIndex = this.statusEffects.findIndex(effect => effect.type === effectType);
+        // Find existing effect of this type
+        const existingEffect = this.statusEffects.find(effect => effect.type === effectType);
 
-        if (existingEffectIndex !== -1) {
-            // If effect exists, just refresh duration
-            this.statusEffects[existingEffectIndex].remainingDuration = Math.max(
-                this.statusEffects[existingEffectIndex].remainingDuration,
-                effectParams.duration
-            );
+        if (existingEffect) {
+            // Refresh duration and potentially update params
+            existingEffect.duration = effectParams.duration || existingEffect.duration;
+            // Update other params as needed
+            Object.assign(existingEffect, effectParams);
         } else {
             // Add new effect
-            const newEffect = {
+            this.statusEffects.push({
                 type: effectType,
-                remainingDuration: effectParams.duration,
                 ...effectParams
-            };
+            });
 
-            // Add additional properties based on effect type
+            // Create visual effect based on type
             switch (effectType) {
                 case 'burn':
-                    newEffect.timeSinceLastTick = 0;
                     this.createBurnEffectVisual();
                     break;
-
                 case 'slow':
                     this.createSlowEffectVisual(effectParams.duration);
                     break;
-
                 case 'weaken':
                     this.createWeakenEffectVisual(effectParams.duration);
                     break;
             }
-
-            this.statusEffects.push(newEffect);
         }
 
-        // Update speed immediately if it's a slow effect
-        if (effectType === 'slow') {
-            this.calculateCurrentSpeed();
-        }
+        // Recalculate speed (for slow effects)
+        this.calculateCurrentSpeed();
     }
 
     // Method to recalculate the path when a tower is placed
@@ -547,48 +540,61 @@ export class Enemy {
     }
 
     createBurnEffectVisual() {
-        // This creates the persistent burn effect visual when the status is first applied
         if (!this.mesh) return;
 
-        // Create a fire aura effect if it doesn't exist
-        if (!this.mesh.userData.burnEffect) {
-            const burnGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-            const burnMaterial = new THREE.MeshBasicMaterial({
-                color: ElementStyles[ElementTypes.FIRE].emissive,
-                transparent: true,
-                opacity: 0.3
-            });
+        // Remove existing burn effect if any
+        if (this.mesh.userData.burnEffect) {
+            this.mesh.remove(this.mesh.userData.burnEffect);
+        }
 
-            const burnEffect = new THREE.Mesh(burnGeometry, burnMaterial);
-            this.mesh.add(burnEffect);
+        // Create a fire/burn effect
+        const burnGeometry = new THREE.SphereGeometry(0.55, 16, 16);
+        const burnMaterial = new THREE.MeshBasicMaterial({
+            color: ElementStyles[ElementTypes.FIRE].color,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
 
-            // Store reference
-            this.mesh.userData.burnEffect = burnEffect;
+        const burnEffect = new THREE.Mesh(burnGeometry, burnMaterial);
+        this.mesh.add(burnEffect);
 
+        // Store reference
+        this.mesh.userData.burnEffect = burnEffect;
+
+        if (burnEffect) {
             // Animate pulsing
             let startTime = performance.now();
 
-            const animatePulse = () => {
-                if (!this.mesh || !this.mesh.userData.burnEffect) return;
+            // Add to game's animation system instead of creating a new loop
+            const animationId = this.game.addAnimationEffect({
+                startTime: startTime,
+                duration: Infinity, // Runs until explicitly removed
+                update: (progress) => {
+                    if (!this.mesh || !this.mesh.userData.burnEffect) return true; // Complete if mesh or effect is gone
 
-                const time = performance.now() - startTime;
-                const scale = 1 + 0.2 * Math.sin(time * 0.005);
+                    const time = performance.now() - startTime;
+                    const scale = 1 + 0.2 * Math.sin(time * 0.005);
 
-                burnEffect.scale.set(scale, scale, scale);
+                    burnEffect.scale.set(scale, scale, scale);
 
-                // Check if the burn effect is still active
-                const hasBurnEffect = this.statusEffects.some(effect => effect.type === 'burn');
+                    // Check if the burn effect is still active
+                    const hasBurnEffect = this.statusEffects.some(effect => effect.type === 'burn');
 
-                if (hasBurnEffect) {
-                    requestAnimationFrame(animatePulse);
-                } else {
-                    // Remove effect when burn wears off
-                    this.mesh.remove(burnEffect);
-                    delete this.mesh.userData.burnEffect;
+                    if (!hasBurnEffect) {
+                        // Remove effect when burn wears off
+                        this.mesh.remove(burnEffect);
+                        delete this.mesh.userData.burnEffect;
+                        delete this.mesh.userData.burnEffectAnimationId;
+                        return true; // Animation complete
+                    }
+
+                    return false; // Animation still running
                 }
-            };
+            });
 
-            animatePulse();
+            // Store animation ID for potential early cancellation
+            this.mesh.userData.burnEffectAnimationId = animationId;
         }
     }
 

@@ -376,24 +376,47 @@ export class Map {
         // Force all enemies to recalculate their paths
         if (this.game.enemies) {
             // Clear the path cache since the grid has changed
-            if (this.game.cachedPaths && typeof this.game.cachedPaths.clear === 'function') {
-                this.game.cachedPaths.clear();
+            if (typeof this.game.clearPathCache === 'function') {
+                this.game.clearPathCache();
             }
-            
-            // Only update enemies that need new paths
-            for (const enemy of this.game.enemies) {
-                if (!enemy.reachedEnd) {
-                    enemy.recalculatePath();
-                }
-            }
+
+            // Mark last path update time to force recalculation for all enemies
+            this.game.lastPathUpdate = performance.now();
         }
     }
 
     removeTower(gridX, gridY) {
-        // Mark cell as walkable again (not empty)
+        // Find the tower at this grid position
+        const worldPos = this.gridToWorld(gridX, gridY);
+        const towersAtPosition = this.game.towers.filter(tower =>
+            tower.gridPosition &&
+            tower.gridPosition.gridX === gridX &&
+            tower.gridPosition.gridY === gridY
+        );
+
+        // Remove the tower if found
+        for (const tower of towersAtPosition) {
+            // Call the tower cleanup method
+            if (tower.cleanup) {
+                tower.cleanup();
+            } else if (tower.towerInstance) {
+                this.game.renderer.removeTower(tower.towerInstance);
+            } else if (tower.mesh) {
+                // Fallback for compatibility with old tower system
+                this.game.renderer.scene.remove(tower.mesh);
+            }
+
+            // Remove from the game's towers array
+            const index = this.game.towers.indexOf(tower);
+            if (index !== -1) {
+                this.game.towers.splice(index, 1);
+            }
+        }
+
+        // Mark cell as walkable again
         this.grid[gridY][gridX] = 1;
 
-        // Recalculate path if needed
+        // Recalculate path
         this.updatePathfinding();
     }
 
@@ -418,10 +441,16 @@ export class Map {
         // Create new path visualization
         this.createPathVisualization();
 
-        // Notify enemies to recalculate their paths
+        // Force path recalculation for all enemies
         if (this.game.enemies) {
-            for (const enemy of this.game.enemies) {
-                enemy.recalculatePath();
+            // Clear path cache
+            if (typeof this.game.clearPathCache === 'function') {
+                this.game.clearPathCache();
+            }
+
+            // Mark last path update time to force recalculation for all enemies
+            if (this.game.lastPathUpdate !== undefined) {
+                this.game.lastPathUpdate = performance.now();
             }
         }
     }

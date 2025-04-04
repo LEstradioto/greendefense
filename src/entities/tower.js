@@ -3,6 +3,57 @@ import { ElementTypes, ElementalAdvantages, ElementEffects } from '../elements.j
 import * as THREE from 'three';
 
 export class Tower {
+    // Static method to get the cost of a tower type
+    static getCost(towerType) {
+        const costs = {
+            // Basic towers
+            'arrow': 10,
+            'doubleArrow': 25,
+            'cannon': 50,
+
+            // Elemental basic towers
+            'fire_basic': 15,
+            'water_basic': 15,
+            'earth_basic': 20,
+            'air_basic': 15,
+            'shadow_basic': 20,
+
+            // Elemental advanced towers
+            'fire_advanced': 35,
+            'water_advanced': 35,
+            'earth_advanced': 45,
+            'air_advanced': 30,
+            'shadow_advanced': 40
+        };
+
+        return costs[towerType] || 20; // Default cost if tower type not found
+    }
+
+    // Static method to create a tower
+    static async create(game, towerType, gridX, gridY) {
+        // Determine default element based on tower type
+        let element = ElementTypes.NEUTRAL;
+        if (towerType.startsWith('fire_')) {
+            element = ElementTypes.FIRE;
+        } else if (towerType.startsWith('water_')) {
+            element = ElementTypes.WATER;
+        } else if (towerType.startsWith('earth_')) {
+            element = ElementTypes.EARTH;
+        } else if (towerType.startsWith('air_')) {
+            element = ElementTypes.AIR;
+        } else if (towerType.startsWith('shadow_')) {
+            element = ElementTypes.SHADOW;
+        }
+
+        const position = game.map.gridToWorld(gridX, gridY);
+        const tower = new Tower(game, towerType, position, { gridX, gridY }, element);
+
+        // Update map grid
+        game.map.placeTower(gridX, gridY);
+
+        return tower;
+    }
+
     constructor(game, type, position, gridPosition, element = ElementTypes.NEUTRAL, stats = null) {
         this.game = game;
         this.type = type;
@@ -36,25 +87,14 @@ export class Tower {
         this.shield = 0; // Damage reduction percentage (0.5 = 50% reduction)
         this.hasteMultiplier = 1.0; // Attack speed multiplier (1.5 = 50% faster)
 
-        // Create 3D representation
-        this.mesh = this.game.renderer.createTower(this);
+        // Create 3D representation using instanced meshes
+        this.towerInstance = this.game.renderer.createTower(this);
 
-        // Add the created mesh group to the scene
-        if (this.mesh) {
-             this.game.renderer.scene.add(this.mesh);
-             console.log(`Tower mesh added to scene for type: ${this.type}`); // Debug log
+        if (!this.towerInstance) {
+            console.error(`Failed to create tower instance for type: ${this.type}`);
         } else {
-             console.error(`Failed to create tower mesh for type: ${this.type}`); // Error log
+            console.log(`Tower instance created for type: ${this.type}`);
         }
-
-        // Set the position of the tower mesh
-        // Position the tower directly at the grid position
-        // The tower foundation is built to sit on the ground
-        this.mesh.position.set(
-            position.x,
-            0, // Place directly at ground level - foundation will extend below
-            position.z
-        );
 
         // For debugging
         // console.log("Tower created at:", position, "with height:", this.height, "element:", this.element);
@@ -190,12 +230,14 @@ export class Tower {
         this.updateEffects(deltaTime);
 
         // Update visual effects
-        if (this.mesh.userData.rangeIndicator) {
-            this.mesh.userData.rangeIndicator.visible = this.game.debugMode;
+        if (this.towerInstance && this.towerInstance.topGroup &&
+            this.towerInstance.topGroup.userData.rangeIndicator) {
+            this.towerInstance.topGroup.userData.rangeIndicator.visible = this.game.debugMode;
         }
 
         // Always update nose rotation if an enemy is in range, regardless of fire state
-        if (this.mesh && this.mesh.userData.nose) {
+        if (this.towerInstance && this.towerInstance.topGroup &&
+            this.towerInstance.topGroup.userData.nose) {
             // Find the closest enemy in range
             const target = this.game.findClosestEnemyInRange(this.position, this.range);
             if (target) {
@@ -289,37 +331,12 @@ export class Tower {
     }
 
     rotateTowardTarget(target) {
-        if (!target || !this.mesh) return;
+        if (!target || !this.towerInstance) return;
 
         const targetPosition = target.position;
-        const towerPosition = this.mesh.position;
 
-            // Calculate angle to target
-        const dx = targetPosition.x - towerPosition.x;
-        const dz = targetPosition.z - towerPosition.z;
-        const angle = Math.atan2(dx, dz); // Angle in radians
-
-        // Determine the object to rotate
-        let objectToRotate;
-        if (this.mesh.userData && this.mesh.userData.nose) {
-            // If a specific 'nose' part exists, rotate that
-            objectToRotate = this.mesh.userData.nose;
-            // console.log(`Rotating nose for ${this.type}`); // Debug log
-        } else {
-            // Otherwise, rotate the entire tower mesh
-            objectToRotate = this.mesh;
-            // console.log(`Rotating main mesh for ${this.type}`); // Debug log
-        }
-
-        // Smoothly rotate the object towards the target angle (Y-axis rotation)
-        // Use slerp for smoother rotation, especially for large angle changes
-        const currentQuaternion = new THREE.Quaternion().copy(objectToRotate.quaternion);
-        const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-
-        // Adjust rotation speed (higher value = faster rotation)
-        const rotationSpeed = 0.1;
-        currentQuaternion.slerp(targetQuaternion, rotationSpeed);
-        objectToRotate.quaternion.copy(currentQuaternion);
+        // Use renderer's method to rotate tower
+        this.game.renderer.rotateTowerToTarget(this.towerInstance, targetPosition);
     }
 
     applyElementalSpecialEffects(target) {
@@ -398,36 +415,22 @@ export class Tower {
         // Calculate applied damage with elemental advantage
         const damage = this.calculateDamage(target);
 
-        // Try to get projectile from pool if available
-        let projectile;
+        // Get projectile from the pool using our new method
+        const projectile = this.game.getProjectileFromPool(
+            this.projectileType,
+            startPosition,
+            target,
+            damage,
+            this.areaOfEffect,
+            this.element
+        );
 
-        // Check if the fromPool static method exists
-        if (this.game.projectilePool && this.game.projectilePool.length > 0 &&
-            typeof Projectile.fromPool === 'function') {
-
-            projectile = Projectile.fromPool(
-                this.game,
-                this.projectileType,
-                startPosition,
-                target,
-                damage,
-                this.areaOfEffect ? this.aoeRadius : 0,
-                this.element
-            );
-        } else {
-            // Create new projectile if no pool or method
-            projectile = new Projectile(
-                this.game,
-                this.projectileType,
-                startPosition,
-                target,
-                damage,
-                this.areaOfEffect ? this.aoeRadius : 0,
-                this.element
-            );
+        // Set the tower as the origin tower for range checking
+        if (projectile) {
+            projectile.originTower = this;
         }
 
-        this.game.projectiles.push(projectile);
+        return projectile;
     }
 
     calculateDamage(target) {
@@ -481,10 +484,7 @@ export class Tower {
         this.empowermentMultiplier = multiplier;
         this.empowermentEndTime = performance.now() + (duration * 1000);
 
-        // Visual effect
-        if (this.mesh) {
-            // Could add visual empowerment effect here if needed
-        }
+        // Visual effects handled by renderer in the render loop
     }
 
     applyEffect(effectType, value, duration) {
@@ -534,6 +534,14 @@ export class Tower {
 
                 this.appliedEffects.splice(i, 1);
             }
+        }
+    }
+
+    // Add cleanup method to properly remove tower
+    cleanup() {
+        if (this.towerInstance) {
+            this.game.renderer.removeTower(this.towerInstance);
+            this.towerInstance = null;
         }
     }
 }
