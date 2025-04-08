@@ -2485,7 +2485,7 @@ export class Game {
         context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
 
         // Add text
-        context.font = 'bold 64px Arial';
+        context.font = 'bold 28px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
 
