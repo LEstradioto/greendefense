@@ -156,8 +156,8 @@ export class Enemy {
     }
 
     update(deltaTime) {
-        // Check if reached the end
-        if (this.reachedEnd) return;
+        // Skip update if dead or already at end
+        if (this.health <= 0 || this.reachedEnd) return;
 
         // Update status effects
         this.updateStatusEffects(deltaTime);
@@ -175,6 +175,40 @@ export class Enemy {
         // Check if at the bottom edge of the map (reached end)
         if (!this.reachedEnd && this.position.z > (this.game.map.gridHeight / 2) - 1.5) {
             this.reachedEnd = true;
+
+            // Hide the enemy more effectively by moving it far away
+            this.position.y = -100;
+            this.position.x = 9999;
+            this.position.z = 9999;
+
+            // Update instance position immediately
+            if (this.enemyInstance) {
+                // Update the instance object's position
+                this.enemyInstance.position.set(this.position.x, this.position.y, this.position.z);
+
+                // Update the rendered position
+                if (this.enemyInstance.baseType && this.enemyInstance.elementType &&
+                    this.enemyInstance.instanceIndex !== undefined) {
+                    this.game.renderer.enemyManager.updateEnemyPosition(
+                        this.enemyInstance.baseType,
+                        this.enemyInstance.elementType,
+                        this.enemyInstance.instanceIndex,
+                        this.position
+                    );
+                }
+
+                // Hide effects and health bar
+                if (this.enemyInstance.effectMeshes) {
+                    for (const effect in this.enemyInstance.effectMeshes) {
+                        if (this.enemyInstance.effectMeshes[effect]) {
+                            this.enemyInstance.effectMeshes[effect].visible = false;
+                        }
+                    }
+                }
+                if (this.enemyInstance.healthBar && this.enemyInstance.healthBar.group) {
+                    this.enemyInstance.healthBar.group.visible = false;
+                }
+            }
         }
 
         // Update instance position
@@ -350,6 +384,38 @@ export class Enemy {
                 // We've reached the end of the path - check if at bottom edge
                 if (Math.floor(this.position.z) >= this.game.map.gridHeight - 2) {
                     this.reachedEnd = true;
+
+                    // Hide the enemy by moving it far away - not just below ground
+                    this.position.y = -100;
+                    this.position.x = 10000; // Move far away horizontally too
+                    this.position.z = 10000;
+
+                    // Force update the renderer position immediately
+                    if (this.enemyInstance) {
+                        this.enemyInstance.position.set(this.position.x, this.position.y, this.position.z);
+                        // Update the actual rendered position in the instanced mesh
+                        if (this.enemyInstance.baseType && this.enemyInstance.elementType &&
+                            this.enemyInstance.instanceIndex !== undefined) {
+                            this.game.renderer.enemyManager.updateEnemyPosition(
+                                this.enemyInstance.baseType,
+                                this.enemyInstance.elementType,
+                                this.enemyInstance.instanceIndex,
+                                this.position
+                            );
+                        }
+                        // Hide any effects too
+                        if (this.enemyInstance.effectMeshes) {
+                            for (const effect in this.enemyInstance.effectMeshes) {
+                                if (this.enemyInstance.effectMeshes[effect]) {
+                                    this.enemyInstance.effectMeshes[effect].visible = false;
+                                }
+                            }
+                        }
+                        // Hide health bar
+                        if (this.enemyInstance.healthBar && this.enemyInstance.healthBar.group) {
+                            this.enemyInstance.healthBar.group.visible = false;
+                        }
+                    }
                 } else {
                     // Not at bottom yet, recalculate path
                     this.calculatePath(0);

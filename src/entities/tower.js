@@ -229,10 +229,14 @@ export class Tower {
         // Update applied effects
         this.updateEffects(deltaTime);
 
-        // Update visual effects
+        // Update visual effects - ensure range indicators are only visible in debug mode
         if (this.towerInstance && this.towerInstance.topGroup &&
             this.towerInstance.topGroup.userData.rangeIndicator) {
-            this.towerInstance.topGroup.userData.rangeIndicator.visible = this.game.debugMode;
+            // Force the visibility to match debug mode exactly
+            const rangeIndicator = this.towerInstance.topGroup.userData.rangeIndicator;
+            if (rangeIndicator.visible !== this.game.debugMode) {
+                rangeIndicator.visible = this.game.debugMode;
+            }
         }
 
         // Always update nose rotation if an enemy is in range, regardless of fire state

@@ -1305,7 +1305,6 @@ export class Renderer {
         // Update positions for instanced parts
         this.towerManager.updateBasePosition(elementKey, instanceIndex, tower.position);
         this.towerManager.updateFoundationPosition(elementKey, instanceIndex, tower.position);
-        this.towerManager.updateShadowPosition(elementKey, instanceIndex, tower.position, shadowIndex);
 
         // Determine tower top type based on tower type
         let topType = 'default';
@@ -2465,7 +2464,6 @@ export class Renderer {
         // Update positions for instanced parts
         this.towerManager.updateBasePosition(towerInstance.elementKey, towerInstance.instanceIndex, position);
         this.towerManager.updateFoundationPosition(towerInstance.elementKey, towerInstance.instanceIndex, position);
-        this.towerManager.updateShadowPosition(towerInstance.elementKey, towerInstance.instanceIndex, position, towerInstance.shadowIndex);
 
         // Update top group position
         if (towerInstance.topGroup) {

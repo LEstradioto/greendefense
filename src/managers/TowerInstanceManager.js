@@ -118,9 +118,65 @@ export class TowerInstanceManager {
                 this.towerTops[elementKey][topType].castShadow = true;
                 this.towerTops[elementKey][topType].receiveShadow = true;
                 this.scene.add(this.towerTops[elementKey][topType]);
+
+                // Pre-create nose meshes for each top type that needs it
+                if (topType === 'cannon' || topType === 'arrow' || topType === 'doubleArrow') {
+                    let noseGeometry;
+                    if (topType === 'arrow') {
+                        noseGeometry = this.geometries.arrowNose;
+                    } else if (topType === 'doubleArrow') {
+                        noseGeometry = this.geometries.doubleArrowNose;
+                    } else { // cannon
+                        noseGeometry = this.geometries.cannonBarrel || new THREE.CylinderGeometry(0.12, 0.08, 0.5, 8);
+                    }
+
+                    const noseMaterial = topType === 'cannon' && this.materials.towerSpecial ?
+                        this.materials.towerSpecial.cannonBarrel :
+                        this.materials.towerTops[elementKey];
+
+                    this.towerTops[elementKey][`${topType}_nose`] = new THREE.InstancedMesh(
+                        noseGeometry,
+                        noseMaterial,
+                        this.maxInstancesPerType
+                    );
+                    this.towerTops[elementKey][`${topType}_nose`].count = 0;
+                    this.towerTops[elementKey][`${topType}_nose`].castShadow = true;
+                    this.scene.add(this.towerTops[elementKey][`${topType}_nose`]);
+                }
             }
         }
 
+        // Initialize all instances to be far away to avoid ghost towers
+        const hiddenMatrix = new THREE.Matrix4();
+        hiddenMatrix.setPosition(10000, 10000, 10000);
+
+        // Initialize all instance positions to be far away
+        for (const elementKey in elementTypes) {
+            for (let i = 0; i < this.maxInstancesPerType; i++) {
+                // Set all base and foundation positions far away
+                this.towerBases[elementKey].setMatrixAt(i, hiddenMatrix);
+                this.towerFoundations[elementKey].setMatrixAt(i, hiddenMatrix);
+
+                // Set all top positions far away
+                for (const topType in this.towerTopTypes) {
+                    this.towerTops[elementKey][topType].setMatrixAt(i, hiddenMatrix);
+
+                    // Also set nose positions far away if they exist
+                    if (this.towerTops[elementKey][`${topType}_nose`]) {
+                        this.towerTops[elementKey][`${topType}_nose`].setMatrixAt(i, hiddenMatrix);
+                        this.towerTops[elementKey][`${topType}_nose`].instanceMatrix.needsUpdate = true;
+                    }
+                }
+            }
+
+            // Update matrix instances
+            this.towerBases[elementKey].instanceMatrix.needsUpdate = true;
+            this.towerFoundations[elementKey].instanceMatrix.needsUpdate = true;
+
+            for (const topType in this.towerTopTypes) {
+                this.towerTops[elementKey][topType].instanceMatrix.needsUpdate = true;
+            }
+        }
     }
 
     getNextIndex(elementKey) {
@@ -181,13 +237,6 @@ export class TowerInstanceManager {
         matrix.setPosition(position.x, 0.05, position.z); // Foundation is at ground level
         this.towerFoundations[elementKey].setMatrixAt(index, matrix);
         this.towerFoundations[elementKey].instanceMatrix.needsUpdate = true;
-    }
-
-    updateShadowPosition(elementKey, index, position, shadowIndex) {
-        const matrix = new THREE.Matrix4();
-        matrix.makeRotationX(-Math.PI / 2); // Align with ground
-        const translationMatrix = new THREE.Matrix4().makeTranslation(position.x, -0.2, position.z); // Lower the Y position to -0.2 instead of 0.02
-        matrix.multiply(translationMatrix);
     }
 
     updateTopPosition(elementKey, index, position, topType = 'default', rotation = 0) {
@@ -361,6 +410,18 @@ export class TowerInstanceManager {
         for (const topType in this.towerTops[elementKey]) {
             this.towerTops[elementKey][topType].setMatrixAt(index, hiddenMatrix);
             this.towerTops[elementKey][topType].instanceMatrix.needsUpdate = true;
+
+            // Also hide corresponding nose parts if they exist
+            if (topType.includes('_nose')) {
+                continue; // Skip nose parts, they're handled with their parent top
+            }
+
+            // Check if this top type has a nose part
+            const noseKey = `${topType}_nose`;
+            if (this.towerTops[elementKey][noseKey]) {
+                this.towerTops[elementKey][noseKey].setMatrixAt(index, hiddenMatrix);
+                this.towerTops[elementKey][noseKey].instanceMatrix.needsUpdate = true;
+            }
         }
     }
 
