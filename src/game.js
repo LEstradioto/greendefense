@@ -34,13 +34,6 @@ export class Game {
         this.performanceCheckInterval = 60; // Check every ~1s at 60fps
         this.lastPerformanceUpdate = 0;
 
-        // Shared resources to reduce object creation
-        this.sharedResources = {
-            // Pre-generate common textures used for effects
-            soulTexture: this.createSoulTexture(),
-            // Add more shared resources as needed
-        };
-
         // Maximum number of entities to keep performance stable
         this.maxActiveProjectiles = 100; // Reduced limit to prevent visual clutter
         this.maxActiveEnemies = 150;
@@ -1219,7 +1212,7 @@ export class Game {
         }
 
         // Create soul effect when enemy dies
-        this.createSoulEffect(enemy);
+        this.createMoneyWinEffect(enemy);
 
         // Remove enemy visuals
         this.removeEnemyVisuals(enemy);
@@ -2651,96 +2644,96 @@ export class Game {
         animate();
     }
 
-    // Pre-generate soul texture only once for reuse
-    createSoulTexture() {
-        // Create a canvas for the sprite
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext('2d');
-
-        // Create a radial gradient for the soul with transparent background
-        const gradient = ctx.createRadialGradient(
-            64, 64, 0,
-            64, 64, 60
-        );
-        gradient.addColorStop(0, 'rgba(52, 152, 219, 0.9)'); // Blue core
-        gradient.addColorStop(0.6, 'rgba(52, 152, 219, 0.5)'); // Fading blue
-        gradient.addColorStop(1, 'rgba(52, 152, 219, 0)');     // Transparent edge
-
-        // Draw the soul
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 128, 128);
-
-        // Add a glow effect
-        ctx.globalCompositeOperation = 'lighter';
-        const glowGradient = ctx.createRadialGradient(
-            64, 64, 10,
-            64, 64, 40
-        );
-        glowGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-        glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = glowGradient;
-        ctx.fillRect(0, 0, 128, 128);
-
-        // Create and return a texture from the canvas
-        return new THREE.CanvasTexture(canvas);
-    }
-
-    createSoulEffect(enemy) {
-        // Create a soul effect when enemy is defeated using a sprite with alpha transparency
+    createMoneyWinEffect(enemy) {
+        // Skip if no renderer or no position
         if (!this.renderer || !enemy.position) return;
 
-        // Reuse the pre-generated soul texture
-        const texture = this.sharedResources.soulTexture;
-        const spriteSize = 2;
+        // Skip effect if we're in low performance mode
+        if (this.performanceMode === 'critical' ||
+            (this.fpsCounter && this.fpsCounter.value < 30)) {
+            return;
+        }
 
-        // Create material with the shared texture
+        // Get the actual gold reward for this enemy
+        let baseReward = Math.round(enemy.reward || 10);
+
+        // Apply wave gold multiplier
+        const waveIndex = this.currentWave - 1;
+        let goldAmount = baseReward;
+        if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
+            goldAmount = Math.round(goldAmount * this.waveSettings[waveIndex].goldMultiplier);
+        }
+
+        // Apply global gold multiplier
+        if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
+            goldAmount = Math.round(goldAmount * this.difficultySettings.goldMultiplier);
+        }
+
+        // Create a canvas for the gold text
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const context = canvas.getContext('2d');
+
+        // Clear background with transparency
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw text with gold color and black outline
+        context.font = 'bold 48px Arial';
+        context.fillStyle = '#FFD700'; // Gold color
+        context.strokeStyle = '#000000';
+        context.lineWidth = 4;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.strokeText(`+${goldAmount}`, canvas.width/2, canvas.height/2);
+        context.fillText(`+${goldAmount}`, canvas.width/2, canvas.height/2);
+
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+
+        // Create sprite material with proper transparency settings
         const material = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
-            blending: THREE.AdditiveBlending
+            opacity: 1.0,
+            depthTest: false, // Ensure it's always visible
+            depthWrite: false, // Don't write to depth buffer
+            sizeAttenuation: true // Scale with distance
         });
 
+        // Create the sprite
         const sprite = new THREE.Sprite(material);
-        sprite.scale.set(spriteSize, spriteSize, 1);
-
-        // Position at enemy location
+        sprite.scale.set(1.4, 0.7, 2);
         sprite.position.copy(enemy.position);
-        sprite.position.y += 0.5; // Float slightly above
+        sprite.position.y += 0.5; // Position above enemy
 
+        // Add to scene
         this.renderer.scene.add(sprite);
 
-        // Add to centralized animation system
+        // Animate floating up and fading out
         const startTime = performance.now();
-        const duration = 800; // 0.8 seconds - shorter for better performance
+        const duration = 1000; // 1 second
 
         this.addAnimationEffect({
             startTime,
             duration,
+            type: 'decorative', // Mark as non-essential for performance
             update: (progress) => {
-                // Rise up
-                sprite.position.y += 0.03;
+                // Float upward
+                sprite.position.y += 0.015;
 
-                // Pulsate slightly (skip this calculation at low FPS)
-                if (this.fpsCounter && this.fpsCounter.value > 40) {
-                    const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 2);
-                    sprite.scale.set(spriteSize * scale, spriteSize * scale, 1);
-                }
-
-                // Fade out near the end
-                if (progress > 0.6) {
-                    const fadeProgress = (progress - 0.6) / 0.4;
-                    material.opacity = 1 - fadeProgress;
+                // Fade out in the second half of animation
+                if (progress > 0.5) {
+                    material.opacity = 2 * (1 - progress); // Fade out in the second half
                 }
 
                 if (progress >= 1) {
-                    // Clean up resources - only remove the sprite, don't dispose shared texture
+                    // Clean up
                     this.renderer.scene.remove(sprite);
                     material.dispose();
+                    texture.dispose();
                     return true; // Animation complete
                 }
-
                 return false; // Animation still running
             }
         });
