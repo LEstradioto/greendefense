@@ -15,8 +15,6 @@ export class TowerInstanceManager {
         // Instanced meshes for static tower parts
         this.towerBases = {};
         this.towerFoundations = {};
-        this.towerShadows = {};
-
         // Add instanced meshes for tower tops
         this.towerTops = {};
         this.towerTopTypes = {
@@ -123,15 +121,6 @@ export class TowerInstanceManager {
             }
         }
 
-        // Create single instanced mesh for shadows (same for all towers)
-        this.towerShadows = new THREE.InstancedMesh(
-            this.geometries.towerShadow,
-            this.materials.towerShadow,
-            this.maxInstancesPerType * Object.keys(elementTypes).length
-        );
-        this.towerShadows.count = 0;
-        this.towerShadows.renderOrder = -1;
-        this.scene.add(this.towerShadows);
     }
 
     getNextIndex(elementKey) {
@@ -160,7 +149,6 @@ export class TowerInstanceManager {
         // Update instance counts
         this.towerBases[normalizedElementKey].count = Math.max(this.towerBases[normalizedElementKey].count, index + 1);
         this.towerFoundations[normalizedElementKey].count = this.towerBases[normalizedElementKey].count;
-        this.towerShadows.count++;
 
         // Initialize rotation matrix for this tower
         this.topRotations[normalizedElementKey][index] = new THREE.Matrix4();
@@ -198,10 +186,8 @@ export class TowerInstanceManager {
     updateShadowPosition(elementKey, index, position, shadowIndex) {
         const matrix = new THREE.Matrix4();
         matrix.makeRotationX(-Math.PI / 2); // Align with ground
-        const translationMatrix = new THREE.Matrix4().makeTranslation(position.x, 0.02, position.z);
+        const translationMatrix = new THREE.Matrix4().makeTranslation(position.x, -0.2, position.z); // Lower the Y position to -0.2 instead of 0.02
         matrix.multiply(translationMatrix);
-        this.towerShadows.setMatrixAt(shadowIndex, matrix);
-        this.towerShadows.instanceMatrix.needsUpdate = true;
     }
 
     updateTopPosition(elementKey, index, position, topType = 'default', rotation = 0) {
@@ -231,6 +217,65 @@ export class TowerInstanceManager {
 
         // Update the count if needed
         this.towerTops[elementKey][topType].count = Math.max(this.towerTops[elementKey][topType].count, index + 1);
+
+        // For tower types that have a nose/barrel, immediately create and position it
+        if (topType === 'cannon' || topType === 'arrow' || topType === 'doubleArrow') {
+            // Create and attach the nose mesh if it doesn't exist
+            if (!this.towerTops[elementKey][`${topType}_nose`]) {
+                // Create nose instanced mesh
+                let noseGeometry;
+                if (topType === 'arrow') {
+                    noseGeometry = this.geometries.arrowNose;
+                } else if (topType === 'doubleArrow') {
+                    noseGeometry = this.geometries.doubleArrowNose;
+                } else { // cannon
+                    noseGeometry = this.geometries.cannonBarrel || new THREE.CylinderGeometry(0.12, 0.08, 0.5, 8);
+                }
+
+                const noseMaterial = topType === 'cannon' && this.materials.towerSpecial ?
+                    this.materials.towerSpecial.cannonBarrel :
+                    this.materials.towerTops[elementKey];
+
+                this.towerTops[elementKey][`${topType}_nose`] = new THREE.InstancedMesh(
+                    noseGeometry,
+                    noseMaterial,
+                    this.maxInstancesPerType
+                );
+                this.towerTops[elementKey][`${topType}_nose`].count = this.towerTops[elementKey][topType].count;
+                this.towerTops[elementKey][`${topType}_nose`].castShadow = true;
+                this.scene.add(this.towerTops[elementKey][`${topType}_nose`]);
+            }
+
+            // Position the nose properly relative to the top
+            const noseMatrix = matrix.clone();
+
+            // Translate the nose based on tower type
+            let noseOffset, noseRotation;
+            if (topType === 'cannon') {
+                // Translate the cannon barrel forward and rotate 90 degrees
+                noseOffset = new THREE.Matrix4().makeTranslation(0, 0, 0.35);
+                noseRotation = new THREE.Matrix4().makeRotationX(-Math.PI/2);
+            } else if (topType === 'arrow') {
+                // Position arrow nose at top of the cone
+                noseOffset = new THREE.Matrix4().makeTranslation(0, 0.3, 0);
+                noseRotation = new THREE.Matrix4(); // No rotation needed
+            } else { // doubleArrow
+                // Position double arrow noses
+                noseOffset = new THREE.Matrix4().makeTranslation(0, 0.25, 0);
+                noseRotation = new THREE.Matrix4(); // No rotation needed
+            }
+
+            // Apply transformations: position & rotation, then nose offset & rotation
+            noseMatrix.multiply(noseOffset).multiply(noseRotation);
+
+            // Update the nose instance
+            this.towerTops[elementKey][`${topType}_nose`].setMatrixAt(index, noseMatrix);
+            this.towerTops[elementKey][`${topType}_nose`].instanceMatrix.needsUpdate = true;
+
+            // Update the count if needed
+            this.towerTops[elementKey][`${topType}_nose`].count =
+                Math.max(this.towerTops[elementKey][`${topType}_nose`].count, index + 1);
+        }
     }
 
     updateTopRotation(elementKey, index, topType, targetPosition, towerPosition) {
@@ -312,9 +357,6 @@ export class TowerInstanceManager {
         this.towerFoundations[elementKey].setMatrixAt(index, hiddenMatrix);
         this.towerFoundations[elementKey].instanceMatrix.needsUpdate = true;
 
-        this.towerShadows.setMatrixAt(shadowIndex, hiddenMatrix);
-        this.towerShadows.instanceMatrix.needsUpdate = true;
-
         // Hide all top types
         for (const topType in this.towerTops[elementKey]) {
             this.towerTops[elementKey][topType].setMatrixAt(index, hiddenMatrix);
@@ -337,13 +379,10 @@ export class TowerInstanceManager {
             }
         }
 
-        this.scene.remove(this.towerShadows);
-
         // Clear references
         this.towerBases = {};
         this.towerFoundations = {};
         this.towerTops = {};
-        this.towerShadows = null;
         this.availableIndices = {};
         this.instanceCount = {};
         this.topRotations = {};

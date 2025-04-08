@@ -1199,7 +1199,9 @@ export class Game {
             this.tcgIntegration.updateManaDisplay();
 
             // Visual effect for mana bonus
-            this.createManaBonusEffect(enemy.position);
+            setTimeout(() => {
+                this.createManaBonusEffect(enemy.position);
+            }, 1000);
         }
 
         // Update wave info
@@ -1211,7 +1213,7 @@ export class Game {
             waveInfo.enemiesDefeated++;
         }
 
-        // Create soul effect when enemy dies
+        // Create money effect when enemy dies
         this.createMoneyWinEffect(enemy);
 
         // Remove enemy visuals
@@ -2644,9 +2646,9 @@ export class Game {
         animate();
     }
 
-    createMoneyWinEffect(enemy) {
+    createFloatingTextEffect(position, amount, type = 'gold') {
         // Skip if no renderer or no position
-        if (!this.renderer || !enemy.position) return;
+        if (!this.renderer || !position) return;
 
         // Skip effect if we're in low performance mode
         if (this.performanceMode === 'critical' ||
@@ -2654,22 +2656,17 @@ export class Game {
             return;
         }
 
-        // Get the actual gold reward for this enemy
-        let baseReward = Math.round(enemy.reward || 10);
-
-        // Apply wave gold multiplier
-        const waveIndex = this.currentWave - 1;
-        let goldAmount = baseReward;
-        if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
-            goldAmount = Math.round(goldAmount * this.waveSettings[waveIndex].goldMultiplier);
+        // Configure appearance based on type
+        let textColor, text;
+        if (type === 'gold') {
+            textColor = '#FFD700'; // Gold color
+            text = `+${amount}`;
+        } else if (type === 'mana') {
+            textColor = '#00AAFF'; // Blue mana color
+            text = `+${amount}`;
         }
 
-        // Apply global gold multiplier
-        if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
-            goldAmount = Math.round(goldAmount * this.difficultySettings.goldMultiplier);
-        }
-
-        // Create a canvas for the gold text
+        // Create a canvas for the text
         const canvas = document.createElement('canvas');
         canvas.width = 128;
         canvas.height = 64;
@@ -2677,16 +2674,15 @@ export class Game {
 
         // Clear background with transparency
         context.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw text with gold color and black outline
+        // Draw text with color and black outline
         context.font = 'bold 48px Arial';
-        context.fillStyle = '#FFD700'; // Gold color
+        context.fillStyle = textColor;
         context.strokeStyle = '#000000';
         context.lineWidth = 4;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.strokeText(`+${goldAmount}`, canvas.width/2, canvas.height/2);
-        context.fillText(`+${goldAmount}`, canvas.width/2, canvas.height/2);
+        context.strokeText(text, canvas.width/2, canvas.height/2);
+        context.fillText(text, canvas.width/2, canvas.height/2);
 
         // Create texture from canvas
         const texture = new THREE.CanvasTexture(canvas);
@@ -2698,14 +2694,15 @@ export class Game {
             opacity: 1.0,
             depthTest: false, // Ensure it's always visible
             depthWrite: false, // Don't write to depth buffer
-            sizeAttenuation: true // Scale with distance
+            sizeAttenuation: true, // Scale with distance
+            blending: type === 'mana' ? THREE.AdditiveBlending : THREE.NormalBlending
         });
 
         // Create the sprite
         const sprite = new THREE.Sprite(material);
         sprite.scale.set(1.4, 0.7, 2);
-        sprite.position.copy(enemy.position);
-        sprite.position.y += 0.5; // Position above enemy
+        sprite.position.copy(position);
+        sprite.position.y += 0.5; // Position above enemy or object
 
         // Add to scene
         this.renderer.scene.add(sprite);
@@ -2739,103 +2736,38 @@ export class Game {
         });
     }
 
+    createMoneyWinEffect(enemy) {
+        // Skip if no enemy
+        if (!enemy || !enemy.position) return;
+
+        // Get the actual gold reward for this enemy
+        let baseReward = Math.round(enemy.reward || 10);
+
+        // Apply wave gold multiplier
+        const waveIndex = this.currentWave - 1;
+        let goldAmount = baseReward;
+        if (waveIndex < this.waveSettings.length && this.waveSettings[waveIndex].goldMultiplier) {
+            goldAmount = Math.round(goldAmount * this.waveSettings[waveIndex].goldMultiplier);
+        }
+
+        // Apply global gold multiplier
+        if (this.difficultySettings && this.difficultySettings.goldMultiplier) {
+            goldAmount = Math.round(goldAmount * this.difficultySettings.goldMultiplier);
+        }
+
+        // Create the floating text effect
+        this.createFloatingTextEffect(enemy.position, goldAmount, 'gold');
+    }
+
     createManaBonusEffect(position) {
         // Create a visual mana bonus effect at the given position
-        if (!this.renderer || !position) return;
+        if (!position) return;
 
-        // Create a glowing blue orb
-        const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16);
-        const orbMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00AAFF,
-            transparent: true,
-            opacity: 0.8,
-            blending: THREE.AdditiveBlending
-        });
+        // Use 2 as the default mana bonus amount
+        const manaBonus = 2;
 
-        const orb = new THREE.Mesh(orbGeometry, orbMaterial);
-        orb.position.copy(position);
-        orb.position.y += 0.5; // Position slightly above ground
-
-        this.renderer.scene.add(orb);
-
-        // Create a text sprite for the mana bonus
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
-        const context = canvas.getContext('2d');
-
-        // Add gradient background (subtle)
-        const gradient = context.createRadialGradient(
-            128, 128, 10,
-            128, 128, 80
-        );
-        gradient.addColorStop(0, 'rgba(0, 170, 255, 0.8)');
-        gradient.addColorStop(1, 'rgba(0, 50, 255, 0)');
-
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Add mana text
-        context.font = 'bold 64px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillStyle = '#FFFFFF';
-        context.fillText('+1', canvas.width / 2, canvas.height / 2);
-
-        // Create sprite
-        const texture = new THREE.CanvasTexture(canvas);
-        const spriteMaterial = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            opacity: 1.0,
-            blending: THREE.AdditiveBlending
-        });
-
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.scale.set(2, 2, 1);
-        sprite.position.copy(position);
-        sprite.position.y += 1; // Above the orb
-
-        this.renderer.scene.add(sprite);
-
-        // Animation data
-        const startTime = performance.now();
-        const duration = 1500; // 1.5 seconds
-
-        // Add to the centralized animation system
-        this.addAnimationEffect({
-            startTime,
-            duration,
-            update: (progress) => {
-                // Float upward
-                orb.position.y += 0.01;
-                sprite.position.y += 0.015;
-
-                // Pulse size
-                const scale = 1 + 0.2 * Math.sin(progress * Math.PI * 4);
-                orb.scale.set(scale, scale, scale);
-
-                // Fade out at the end
-                if (progress > 0.7) {
-                    const fadeOutProgress = (progress - 0.7) / 0.3;
-                    orbMaterial.opacity = 0.8 * (1 - fadeOutProgress);
-                    spriteMaterial.opacity = 1 - fadeOutProgress;
-                }
-
-                if (progress >= 1) {
-                    // Remove effect
-                    this.renderer.scene.remove(orb);
-                    this.renderer.scene.remove(sprite);
-                    orbGeometry.dispose();
-                    orbMaterial.dispose();
-                    texture.dispose();
-                    spriteMaterial.dispose();
-                    return true; // Animation complete
-                }
-
-                return false; // Animation still running
-            }
-        });
+        // Create the floating text effect
+        this.createFloatingTextEffect(position, manaBonus, 'mana');
     }
 
     createLifeFlashEffect() {

@@ -13,7 +13,6 @@ export class EnemyInstanceManager {
 
         // Track instanced meshes by enemy type and element
         this.enemyMeshes = {};
-        this.shadowMeshes = null;
 
         // Instance tracking
         this.availableIndices = {};
@@ -204,33 +203,6 @@ export class EnemyInstanceManager {
                 this.enemyMeshes[baseType][elementType] = instancedMesh;
             }
         }
-
-        // Create instance mesh for shadows - a single instanced mesh for all enemy shadows
-        const shadowGeometry = new THREE.PlaneGeometry(0.6, 0.6);
-        const shadowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            transparent: true,
-            opacity: 0.4,
-            depthWrite: false
-        });
-
-        this.shadowMeshes = new THREE.InstancedMesh(
-            shadowGeometry,
-            shadowMaterial,
-            this.maxInstancesPerType * this.enemyTypes.length * this.elementTypes.length
-        );
-        this.shadowMeshes.count = 0;
-        this.shadowMeshes.renderOrder = -1;
-
-        // Rotate all shadows to lie flat
-        const baseRotationMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-
-        // Initialize all matrices with the rotation
-        for (let i = 0; i < this.shadowMeshes.count; i++) {
-            this.shadowMeshes.setMatrixAt(i, baseRotationMatrix);
-        }
-
-        this.scene.add(this.shadowMeshes);
     }
 
     createEnemy(enemy) {
@@ -260,15 +232,11 @@ export class EnemyInstanceManager {
             return null;
         }
 
-        // Get shadow index - shared index counter for all shadows
-        const shadowIndex = this.shadowMeshes.count;
-        this.shadowMeshes.count++;
-
         // Create health bar as individual mesh (not instanced)
         const healthBarData = this.renderer.createHealthBar();
 
         // Set initial position
-        this.updateEnemyPosition(baseType, elementType, instanceIndex, enemy.position, shadowIndex);
+        this.updateEnemyPosition(baseType, elementType, instanceIndex, enemy.position);
 
         // Add health bar mesh to scene
         healthBarData.group.position.set(enemy.position.x, enemy.position.y + 1, enemy.position.z);
@@ -279,7 +247,6 @@ export class EnemyInstanceManager {
             baseType,
             elementType,
             instanceIndex,
-            shadowIndex,
             healthBar: healthBarData,
             position: new THREE.Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
             // Additional effects - these need individual meshes
@@ -322,20 +289,12 @@ export class EnemyInstanceManager {
         return index;
     }
 
-    updateEnemyPosition(baseType, elementType, instanceIndex, position, shadowIndex) {
+    updateEnemyPosition(baseType, elementType, instanceIndex, position) {
         // Update enemy mesh position
         const matrix = new THREE.Matrix4();
         matrix.setPosition(position.x, position.y, position.z);
         this.enemyMeshes[baseType][elementType].setMatrixAt(instanceIndex, matrix);
         this.enemyMeshes[baseType][elementType].instanceMatrix.needsUpdate = true;
-
-        // Update shadow position
-        const shadowMatrix = new THREE.Matrix4();
-        shadowMatrix.makeRotationX(-Math.PI / 2); // Align with ground
-        const translationMatrix = new THREE.Matrix4().makeTranslation(position.x, 0.02, position.z);
-        shadowMatrix.multiply(translationMatrix);
-        this.shadowMeshes.setMatrixAt(shadowIndex, shadowMatrix);
-        this.shadowMeshes.instanceMatrix.needsUpdate = true;
     }
 
     updateHealthBar(enemyInstance, healthPercent) {
@@ -481,15 +440,6 @@ export class EnemyInstanceManager {
                     .setMatrixAt(enemyInstance.instanceIndex, matrix);
                 this.enemyMeshes[enemyInstance.baseType][enemyInstance.elementType]
                     .instanceMatrix.needsUpdate = true;
-
-                // Also move shadow to far away
-                if (this.shadowMeshes && enemyInstance.shadowIndex !== undefined) {
-                    const shadowMatrix = new THREE.Matrix4();
-                    shadowMatrix.makeRotationX(-Math.PI / 2);
-                    shadowMatrix.setPosition(farAwayPosition);
-                    this.shadowMeshes.setMatrixAt(enemyInstance.shadowIndex, shadowMatrix);
-                    this.shadowMeshes.instanceMatrix.needsUpdate = true;
-                }
             }
 
             // Make instance available for reuse
@@ -585,16 +535,6 @@ export class EnemyInstanceManager {
                     updatedMeshes.add(`${baseType}:${elementType}`);
                 }
 
-                // Update shadow position
-                if (enemy.enemyInstance.shadowIndex !== undefined && this.shadowMeshes) {
-                    const shadowMatrix = new THREE.Matrix4();
-                    shadowMatrix.makeRotationX(-Math.PI / 2);
-                    const translationMatrix = new THREE.Matrix4().makeTranslation(position.x, 0.02, position.z);
-                    shadowMatrix.multiply(translationMatrix);
-                    this.shadowMeshes.setMatrixAt(enemy.enemyInstance.shadowIndex, shadowMatrix);
-                    updatedMeshes.add('shadow');
-                }
-
                 // Update health bar position if it exists
                 if (enemy.enemyInstance.healthBar && enemy.enemyInstance.healthBar.group) {
                     enemy.enemyInstance.healthBar.group.position.set(
@@ -613,14 +553,10 @@ export class EnemyInstanceManager {
 
         // Apply all updates at once for better performance
         for (const meshKey of updatedMeshes) {
-            if (meshKey === 'shadow') {
-                this.shadowMeshes.instanceMatrix.needsUpdate = true;
-            } else {
                 const [baseType, elementType] = meshKey.split(':');
                 if (this.enemyMeshes[baseType] && this.enemyMeshes[baseType][elementType]) {
                     this.enemyMeshes[baseType][elementType].instanceMatrix.needsUpdate = true;
                 }
-            }
         }
     }
 
@@ -888,14 +824,8 @@ export class EnemyInstanceManager {
             }
         }
 
-        // Remove shadow mesh
-        if (this.shadowMeshes) {
-            this.scene.remove(this.shadowMeshes);
-        }
-
         // Clear references
         this.enemyMeshes = {};
-        this.shadowMeshes = null;
         this.availableIndices = {};
         this.instanceCount = {};
         this.enemyInstances = [];
