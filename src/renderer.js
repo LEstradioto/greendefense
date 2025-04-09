@@ -63,7 +63,7 @@ export class Renderer {
         this.controls.maxPolarAngle = Math.PI / 2.5; // Limit camera angle
 
         // Set up zoom constraints and initial state
-        this.controls.minDistance = 10;
+        this.controls.minDistance = 30;
         this.controls.maxDistance = 150;
         this.controls.enableDamping = true; // Smooth camera movement
         this.controls.dampingFactor = 0.05; // More fluid zooming
@@ -859,14 +859,49 @@ export class Renderer {
     }
 
     createEnemy(enemy) {
-        // Use our new enemy manager to create the enemy
-        return this.enemyManager.createEnemy(enemy);
+        // Ensure instance managers are initialized
+        if (!this.enemyInstanceManager) {
+            console.log("Enemy instance manager not found, initializing now");
+            this.initializeInstanceManagers();
+        }
+
+        // Create the enemy using the instance manager
+        if (this.enemyInstanceManager) {
+            const enemyInstance = this.enemyInstanceManager.createEnemy(enemy);
+
+            // // Update the enemy's position immediately to ensure it appears at the right spot
+            // if (enemyInstance && enemy.position) {
+            //     this.enemyInstanceManager.updateEnemyPosition(
+            //         enemyInstance.baseType,
+            //         enemyInstance.elementType,
+            //         enemyInstance.instanceIndex,
+            //         enemy.position
+            //     );
+
+            //     // Also update instance position for future reference
+            //     enemyInstance.position.copy(enemy.position);
+
+            //     // Make sure health bar is properly positioned
+            //     if (enemyInstance.healthBar && enemyInstance.healthBar.group) {
+            //         enemyInstance.healthBar.group.position.set(
+            //             enemy.position.x,
+            //             enemy.position.y + 1,
+            //             enemy.position.z
+            //         );
+            //     }
+            // }
+
+            return enemyInstance;
+        }
+
+        console.error("Failed to create enemy: Enemy instance manager is not available");
+        return null;
     }
 
     removeEnemy(enemy) {
         // If the enemy has an enemyInstance, use that to remove it
         if (enemy.enemyInstance) {
-            this.enemyManager.removeEnemy(enemy.enemyInstance);
+            this.enemyInstanceManager.removeEnemy(enemy.enemyInstance);
             enemy.enemyInstance = null;
             return;
         }
@@ -975,95 +1010,46 @@ export class Renderer {
     }
 
     createTower(tower) {
-        // Get element key and ensure it exists
-        const elementKey = tower.element || ElementTypes.NEUTRAL;
+        // Ensure instance managers are initialized
+        if (!this.towerInstanceManager) {
+            console.log("Tower instance manager not found, initializing now");
+            this.initializeInstanceManagers();
+        }
 
-        // Get instance indices from the manager
-        const instanceIndex = this.towerManager.getNextIndex(elementKey);
+        // Get normalized element key
+        const elementKey = tower.element.toLowerCase();
+
+        // Create tower instance using instance manager
+        const instanceIndex = this.towerInstanceManager.getNextIndex(elementKey);
+
         if (instanceIndex === -1) {
-            console.error("Failed to get instance index for tower");
+            console.error(`Failed to create tower: no available instance slot for element ${elementKey}`);
             return null;
         }
 
-        // Get shadow index
-        const shadowIndex = this.nextShadowIndex++;
+        // Update tower positions using the instance manager
+        this.towerInstanceManager.updateBasePosition(elementKey, instanceIndex, tower.position);
+        this.towerInstanceManager.updateFoundationPosition(elementKey, instanceIndex, tower.position);
 
-        // Update positions for instanced parts
-        this.towerManager.updateBasePosition(elementKey, instanceIndex, tower.position);
-        this.towerManager.updateFoundationPosition(elementKey, instanceIndex, tower.position);
-
-        // Determine tower top type based on tower type
+        // Add top based on tower type
         let topType = 'default';
-        if (tower.type === 'arrow') {
-            topType = 'arrow';
-        } else if (tower.type === 'doubleArrow') {
-            topType = 'doubleArrow';
-        } else if (tower.type === 'cannon') {
+        if (tower.type.includes('cannon')) {
             topType = 'cannon';
-        } else if (tower.element !== ElementTypes.NEUTRAL) {
-            // For elemental towers, use element-specific tops
-            topType = tower.element.toLowerCase();
+        } else if (tower.type.includes('double')) {
+            topType = 'doubleArrow';
+        } else if (tower.type.includes('arrow')) {
+            topType = 'arrow';
         }
 
-        // Update the top position using instanced rendering
-        this.towerManager.updateTopPosition(elementKey, instanceIndex, tower.position, topType);
+        this.towerInstanceManager.updateTopPosition(elementKey, instanceIndex, tower.position, topType);
 
-        // Create a range indicator (hidden by default) - use wireframe for better performance
-        const rangeSegments = 32;
-        const rangeGeometry = new THREE.BufferGeometry();
-        const positions = new Float32Array((rangeSegments + 1) * 3);
-
-        // Create a circle using line segments
-        for (let i = 0; i <= rangeSegments; i++) {
-            const angle = (i / rangeSegments) * Math.PI * 2;
-            positions[i * 3] = Math.cos(angle) * tower.range;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = Math.sin(angle) * tower.range;
-        }
-
-        rangeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-        const rangeMaterial = new THREE.LineBasicMaterial({
-            color: 0x00ff00,
-            transparent: true,
-            opacity: 0.4,
-            depthTest: false,
-            depthWrite: false
-        });
-
-        const rangeIndicator = new THREE.Line(rangeGeometry, rangeMaterial);
-        rangeIndicator.position.y = 0.02; // Just above ground
-        rangeIndicator.visible = false; // Hidden by default
-        rangeIndicator.renderOrder = 999; // Very high render order to ensure visibility
-
-        // Create an empty group for the range indicator and other metadata
-        // This maintains compatibility with existing code
-        const topGroup = new THREE.Group();
-        topGroup.position.copy(tower.position);
-        topGroup.userData.rangeIndicator = rangeIndicator;
-        topGroup.add(rangeIndicator);
-
-        // Add to scene
-        this.scene.add(topGroup);
-
-        // Create tower instance object to track everything
-        const towerInstance = {
+        // Return tower instance reference
+        return {
             elementKey,
             instanceIndex,
-            shadowIndex,
             topType,
-            topGroup, // Keep this for compatibility with existing code
-            position: new THREE.Vector3(tower.position.x, 0, tower.position.z),
-            type: tower.type,
-            // Store reference back to the original tower for updates
-            tower: tower
+            position: new THREE.Vector3(tower.position.x, tower.position.y, tower.position.z)
         };
-
-        // Store in the instances array
-        this.towerInstances.push(towerInstance);
-
-        // Return the tower instance
-        return towerInstance;
     }
 
     createProjectile(projectile) {
@@ -1534,13 +1520,79 @@ export class Renderer {
         console.log("Cleaning up scene...");
         console.log("Initial scene children count:", this.scene.children.length);
 
-        // Instead of keeping objects, let's just remove everything but create a new clean scene
-        // This is more reliable for preventing duplicate objects
+        // Reset instance managers if they exist
+        if (this.towerInstanceManager) {
+            console.log("Resetting tower instance manager...");
+            this.towerInstanceManager.reset();
+        }
 
-        // Clear the entire scene
-        while (this.scene.children.length > 0) {
-            const obj = this.scene.children[0];
-            this.scene.remove(obj);
+        if (this.enemyInstanceManager) {
+            console.log("Resetting enemy instance manager...");
+            this.enemyInstanceManager.reset();
+        }
+
+        // Keep references to objects we want to preserve
+        const keepObjects = [];
+
+        // Save references to important lights
+        const lights = this.scene.children.filter(child =>
+            child instanceof THREE.DirectionalLight ||
+            child instanceof THREE.AmbientLight ||
+            child instanceof THREE.HemisphereLight);
+
+        keepObjects.push(...lights);
+
+        // Keep the map group if it exists
+        const mapGroup = this.scene.children.find(child =>
+            child.userData && (child.userData.ground || child.userData.glowLayer));
+
+        if (mapGroup) {
+            console.log("Preserving map group");
+            keepObjects.push(mapGroup);
+        }
+
+        // Keep instance manager objects if they exist
+        if (this.towerInstanceManager) {
+            console.log("Preserving tower instance meshes");
+            // Find and preserve all tower instance meshes
+            for (const elementKey in this.towerInstanceManager.towerBases) {
+                keepObjects.push(this.towerInstanceManager.towerBases[elementKey]);
+                keepObjects.push(this.towerInstanceManager.towerFoundations[elementKey]);
+
+                for (const topType in this.towerInstanceManager.towerTops[elementKey]) {
+                    keepObjects.push(this.towerInstanceManager.towerTops[elementKey][topType]);
+                }
+            }
+        }
+
+        if (this.enemyInstanceManager) {
+            console.log("Preserving enemy instance meshes");
+            // Find and preserve all enemy instance meshes
+            for (const baseType in this.enemyInstanceManager.enemyMeshes) {
+                for (const elementType in this.enemyInstanceManager.enemyMeshes[baseType]) {
+                    keepObjects.push(this.enemyInstanceManager.enemyMeshes[baseType][elementType]);
+                }
+            }
+        }
+
+        console.log(`Objects to preserve: ${keepObjects.length}`);
+
+        // Clear the scene except objects we want to keep
+        for (let i = this.scene.children.length - 1; i >= 0; i--) {
+            const obj = this.scene.children[i];
+            if (!keepObjects.includes(obj)) {
+                this.scene.remove(obj);
+
+                // Only dispose of geometries/materials for objects we don't want to keep
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(m => m.dispose());
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            }
         }
 
         // Reset the scene to initial state
@@ -1563,6 +1615,129 @@ export class Renderer {
         this.scene.add(this.gridHighlight);
 
         console.log("Scene cleanup complete. Scene children count:", this.scene.children.length);
+    }
+
+    // Properly dispose all resources to prevent memory leaks
+    dispose() {
+        console.log("Disposing renderer and resources...");
+
+        // Dispose all materials
+        Object.values(this.materials).forEach(material => {
+            if (material) {
+                if (typeof material === 'object') {
+                    if (material.dispose) material.dispose();
+
+                    // Handle nested material collections
+                    if (material.constructor === Object) {
+                        Object.values(material).forEach(subMaterial => {
+                            if (subMaterial && subMaterial.dispose) subMaterial.dispose();
+                        });
+                    }
+                }
+            }
+        });
+
+        // Dispose all geometries
+        Object.values(this.geometries).forEach(geometry => {
+            if (geometry && geometry.dispose) geometry.dispose();
+        });
+
+        // Dispose instance managers
+        if (this.towerInstanceManager && this.towerInstanceManager.dispose) {
+            this.towerInstanceManager.dispose();
+        }
+
+        if (this.enemyInstanceManager && this.enemyInstanceManager.dispose) {
+            this.enemyInstanceManager.dispose();
+        }
+
+        // Remove all scene objects
+        while(this.scene.children.length > 0) {
+            const obj = this.scene.children[0];
+            this.scene.remove(obj);
+        }
+
+        // Dispose the scene itself
+        if (this.scene.dispose) this.scene.dispose();
+
+        // Dispose renderer
+        if (this.renderer) {
+            this.renderer.dispose();
+            // Force release of context
+            this.renderer.forceContextLoss();
+            this.renderer.context = null;
+            this.renderer.domElement = null;
+        }
+
+        // Remove event listeners
+        if (this.controls) {
+            this.controls.dispose();
+        }
+
+        window.removeEventListener('resize', this.onWindowResize.bind(this));
+
+        console.log("Renderer disposed");
+    }
+
+    // Initialize or re-initialize instance managers
+    initializeInstanceManagers() {
+        console.log("Initializing instance managers...");
+
+        // Initialize tower instance manager if it doesn't exist yet
+        if (!this.towerInstanceManager) {
+            console.log("Creating new TowerInstanceManager");
+            this.towerInstanceManager = new TowerInstanceManager(this);
+        } else {
+            // Reset existing manager
+            console.log("Resetting existing TowerInstanceManager");
+            this.towerInstanceManager.reset();
+        }
+
+        // Initialize enemy instance manager if it doesn't exist yet
+        if (!this.enemyInstanceManager) {
+            console.log("Creating new EnemyInstanceManager");
+            this.enemyInstanceManager = new EnemyInstanceManager(this);
+        } else {
+            // Reset existing manager
+            console.log("Resetting existing EnemyInstanceManager");
+            this.enemyInstanceManager.reset();
+        }
+
+        // Ensure all instance meshes are in the scene
+        for (const elementKey in this.towerInstanceManager.towerBases) {
+            const base = this.towerInstanceManager.towerBases[elementKey];
+            if (base && !this.scene.children.includes(base)) {
+                console.log(`Re-adding tower base mesh for ${elementKey} to scene`);
+                this.scene.add(base);
+            }
+
+            const foundation = this.towerInstanceManager.towerFoundations[elementKey];
+            if (foundation && !this.scene.children.includes(foundation)) {
+                console.log(`Re-adding tower foundation mesh for ${elementKey} to scene`);
+                this.scene.add(foundation);
+            }
+
+            for (const topType in this.towerInstanceManager.towerTops[elementKey]) {
+                const top = this.towerInstanceManager.towerTops[elementKey][topType];
+                if (top && !this.scene.children.includes(top)) {
+                    console.log(`Re-adding tower top mesh (${topType}) for ${elementKey} to scene`);
+                    this.scene.add(top);
+                }
+            }
+        }
+
+        // Ensure enemy meshes are in scene
+        for (const baseType in this.enemyInstanceManager.enemyMeshes) {
+            for (const elementType in this.enemyInstanceManager.enemyMeshes[baseType]) {
+                const mesh = this.enemyInstanceManager.enemyMeshes[baseType][elementType];
+                if (mesh && !this.scene.children.includes(mesh)) {
+                    console.log(`Re-adding enemy mesh for ${baseType}/${elementType} to scene`);
+                    this.scene.add(mesh);
+                }
+            }
+        }
+
+        console.log("Instance managers initialized");
     }
 
     createSpecialEffect(type, position) {

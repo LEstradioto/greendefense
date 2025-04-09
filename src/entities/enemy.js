@@ -37,7 +37,16 @@ export class Enemy {
         this.statusEffects = [];
 
         // Create 3D representation using the enemy instance manager
-        this.enemyInstance = this.game.renderer.createEnemy(this);
+        if (this.game && this.game.renderer) {
+            this.enemyInstance = this.game.renderer.createEnemy(this);
+
+            // Log an error if enemy instance couldn't be created
+            if (!this.enemyInstance) {
+                console.error(`Failed to create enemy instance for type: ${this.type}`);
+            }
+        } else {
+            console.error("Game or renderer not available when creating enemy");
+        }
 
         // Path recalculation timer
         this.lastPathRecalcTime = 0;

@@ -14,11 +14,27 @@ import { UI } from './src/ui.js';
 // Initialize the game when the document is loaded
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
+    // Create a single game instance that persists throughout app lifecycle
     window.game = new Game(canvas);
 
     // Create UI and store it in the game
     window.ui = new UI(window.game);
     window.game.ui = window.ui;
+
+    // Handle game restarts without recreating the renderer
+    const restartButton = document.getElementById('restart-button');
+    if (restartButton) {
+        const originalOnClick = restartButton.onclick;
+        restartButton.onclick = (event) => {
+            if (originalOnClick) {
+                originalOnClick(event);
+            }
+
+            // Use the existing game instance instead of creating a new one
+            const username = document.getElementById('username-input').value || 'Player';
+            window.game.start(username);
+        };
+    }
 
     // Set up audio system with music and sound effects
     const setupAudio = () => {

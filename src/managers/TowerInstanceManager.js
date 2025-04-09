@@ -427,25 +427,79 @@ export class TowerInstanceManager {
 
     // Clean up resources
     dispose() {
-        // Remove instanced meshes from scene
+        // Dispose of all instanced meshes and their materials
         for (const elementKey in this.towerBases) {
-            this.scene.remove(this.towerBases[elementKey]);
-            this.scene.remove(this.towerFoundations[elementKey]);
+            this.towerBases[elementKey].dispose();
+            this.towerFoundations[elementKey].dispose();
 
-            // Remove all top types
-            if (this.towerTops[elementKey]) {
-                for (const topType in this.towerTops[elementKey]) {
-                    this.scene.remove(this.towerTops[elementKey][topType]);
+            for (const topType in this.towerTops[elementKey]) {
+                this.towerTops[elementKey][topType].dispose();
+            }
+        }
+    }
+
+    reset() {
+        console.log("Resetting TowerInstanceManager");
+
+        // Reset instance counts
+        for (const elementKey in this.instanceCount) {
+            this.instanceCount[elementKey] = 0;
+
+            // Reset base and foundation counts
+            if (this.towerBases[elementKey]) {
+                this.towerBases[elementKey].count = 0;
+            }
+
+            if (this.towerFoundations[elementKey]) {
+                this.towerFoundations[elementKey].count = 0;
+            }
+
+            // Reset top counts for all types
+            for (const topType in this.towerTops[elementKey]) {
+                if (this.towerTops[elementKey][topType]) {
+                    this.towerTops[elementKey][topType].count = 0;
                 }
             }
         }
 
-        // Clear references
-        this.towerBases = {};
-        this.towerFoundations = {};
-        this.towerTops = {};
-        this.availableIndices = {};
-        this.instanceCount = {};
-        this.topRotations = {};
+        // Reset available indices
+        for (const elementKey in this.availableIndices) {
+            this.availableIndices[elementKey] = Array.from(Array(this.maxInstancesPerType).keys());
+        }
+
+        // Move all instances far away to hide them
+        const hiddenMatrix = new THREE.Matrix4();
+        hiddenMatrix.setPosition(10000, 10000, 10000);
+
+        for (const elementKey in this.towerBases) {
+            // Initialize all base positions to be far away
+            for (let i = 0; i < this.maxInstancesPerType; i++) {
+                this.towerBases[elementKey].setMatrixAt(i, hiddenMatrix);
+                this.towerFoundations[elementKey].setMatrixAt(i, hiddenMatrix);
+
+                for (const topType in this.towerTops[elementKey]) {
+                    this.towerTops[elementKey][topType].setMatrixAt(i, hiddenMatrix);
+
+                    // Also hide nose meshes if they exist
+                    if (this.towerTops[elementKey][`${topType}_nose`]) {
+                        this.towerTops[elementKey][`${topType}_nose`].setMatrixAt(i, hiddenMatrix);
+                    }
+                }
+            }
+
+            // Update instance matrices
+            this.towerBases[elementKey].instanceMatrix.needsUpdate = true;
+            this.towerFoundations[elementKey].instanceMatrix.needsUpdate = true;
+
+            for (const topType in this.towerTops[elementKey]) {
+                this.towerTops[elementKey][topType].instanceMatrix.needsUpdate = true;
+
+                if (this.towerTops[elementKey][`${topType}_nose`]) {
+                    this.towerTops[elementKey][`${topType}_nose`].instanceMatrix.needsUpdate = true;
+                }
+            }
+        }
+
+        console.log("TowerInstanceManager reset complete");
     }
 }

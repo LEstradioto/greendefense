@@ -298,15 +298,25 @@ export class EnemyInstanceManager {
     }
 
     updateHealthBar(enemyInstance, healthPercent) {
+        // Skip if no health bar
+        if (!enemyInstance || !enemyInstance.healthBar) return;
+
         // Use the renderer's health bar update function
         this.renderer.updateHealthBar(enemyInstance.healthBar, healthPercent);
 
-        // Update position if needed
-        enemyInstance.healthBar.group.position.set(
-            enemyInstance.position.x,
-            enemyInstance.position.y + 1,
-            enemyInstance.position.z
-        );
+        // Make sure the health bar is visible
+        if (enemyInstance.healthBar.group) {
+            enemyInstance.healthBar.group.visible = true;
+        }
+
+        // Update position to match the enemy's current position
+        if (enemyInstance.position) {
+            enemyInstance.healthBar.group.position.set(
+                enemyInstance.position.x,
+                enemyInstance.position.y + 1, // Position above enemy
+                enemyInstance.position.z
+            );
+        }
     }
 
     addElementalEffects(enemyInstance) {
@@ -840,15 +850,15 @@ export class EnemyInstanceManager {
 
     // Cleanup resources
     dispose() {
-        // Remove all enemy instances
-        for (const enemyInstance of [...this.enemyInstances]) {
-            this.removeEnemy(enemyInstance);
-        }
-
-        // Remove all instanced meshes
+        // Dispose of all instanced meshes
         for (const baseType in this.enemyMeshes) {
             for (const elementType in this.enemyMeshes[baseType]) {
-                this.scene.remove(this.enemyMeshes[baseType][elementType]);
+                const mesh = this.enemyMeshes[baseType][elementType];
+                if (mesh) {
+                    this.scene.remove(mesh);
+                    mesh.geometry.dispose();
+                    mesh.material.dispose();
+                }
             }
         }
 
@@ -857,5 +867,54 @@ export class EnemyInstanceManager {
         this.availableIndices = {};
         this.instanceCount = {};
         this.enemyInstances = [];
+    }
+
+    reset() {
+        console.log("Resetting EnemyInstanceManager");
+
+        // Reset all instance counts
+        for (const baseType in this.instanceCount) {
+            for (const elementType in this.instanceCount[baseType]) {
+                this.instanceCount[baseType][elementType] = 0;
+
+                // Reset the instance mesh count
+                if (this.enemyMeshes[baseType] && this.enemyMeshes[baseType][elementType]) {
+                    this.enemyMeshes[baseType][elementType].count = 0;
+                }
+            }
+        }
+
+        // Reset all instance availability indices
+        for (const baseType in this.availableIndices) {
+            for (const elementType in this.availableIndices[baseType]) {
+                this.availableIndices[baseType][elementType] = Array.from(Array(this.maxInstancesPerType).keys());
+            }
+        }
+
+        // Reset animation tracking
+        this._animatedTypes = {};
+
+        // Clear all enemy instances but don't dispose the meshes
+        this.enemyInstances = [];
+
+        // Make all instances invisible by moving them far away
+        const hiddenMatrix = new THREE.Matrix4();
+        hiddenMatrix.setPosition(10000, 10000, 10000);
+
+        for (const baseType in this.enemyMeshes) {
+            for (const elementType in this.enemyMeshes[baseType]) {
+                const mesh = this.enemyMeshes[baseType][elementType];
+
+                // Set all instances to hidden position
+                for (let i = 0; i < this.maxInstancesPerType; i++) {
+                    mesh.setMatrixAt(i, hiddenMatrix);
+                }
+
+                // Update instance matrices
+                mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        console.log("EnemyInstanceManager reset complete");
     }
 }
