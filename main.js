@@ -8,26 +8,41 @@ window.OrbitControls = OrbitControls;
 // Import our game components
 import { Game } from './src/game.js';
 import { UI } from './src/ui.js';
-import { LofiMusicPlayer } from './src/lofiMusic.js';
 
 // Three.js version info removed for production
 
 // Initialize the game when the document is loaded
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
+    // Create a single game instance that persists throughout app lifecycle
     window.game = new Game(canvas);
 
     // Create UI and store it in the game
     window.ui = new UI(window.game);
     window.game.ui = window.ui;
 
+    // Handle game restarts without recreating the renderer
+    const restartButton = document.getElementById('restart-button');
+    if (restartButton) {
+        const originalOnClick = restartButton.onclick;
+        restartButton.onclick = (event) => {
+            if (originalOnClick) {
+                originalOnClick(event);
+            }
+
+            // Use the existing game instance instead of creating a new one
+            const username = document.getElementById('username-input').value || 'Player';
+            window.game.start(username);
+        };
+    }
+
     // Set up audio system with music and sound effects
     const setupAudio = () => {
         // Music tracks
         const musicTracks = [
-            "https://cdn.pixabay.com/download/audio/2023/07/30/audio_e0908e8569.mp3", // Good Night Lofi by FASSounds
-            "https://cdn.pixabay.com/download/audio/2022/11/22/audio_febc508520.mp3", // Lofi Chill by Music Unlimited
-            "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"  // Lofi Study by FASSounds
+            {"name": "Good Night Lofi by FASSounds", "url": "https://cdn.pixabay.com/download/audio/2023/07/30/audio_e0908e8569.mp3"},
+            {"name": "Midnight Works (Chill Cozy Lofi) by FASSounds", "url": "https://cdn.pixabay.com/download/audio/2024/04/02/audio_c2cf857296.mp3"},
+            {"name": "Lofi Study by FASSounds", "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"}
         ];
 
         // We're using URL-based sounds instead of base64
@@ -37,31 +52,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const musicIcon = document.getElementById('music-icon');
         const backgroundMusic = document.getElementById('background-music');
 
-        // Randomize tracks completely
-        // Shuffle the tracks array to get a truly random order
-        const shuffleTracks = (tracks) => {
-            for (let i = tracks.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-            }
-            return tracks;
-        };
-
-        // Play tracks in sequence instead of shuffling
-        // const shuffledTracks = shuffleTracks([...musicTracks]);
-        const tracksToPlay = [...musicTracks]; // Use original order
+        const tracksToPlay = [...musicTracks];
         // Start with a random track index
         let currentTrackIndex = Math.floor(Math.random() * tracksToPlay.length);
 
+        // Get music state from localStorage or default to true
+        let isMusicEnabled = localStorage.getItem('musicEnabled') !== 'false';
+        let isFirstMusicButtonClick = !isMusicEnabled;
+
         // Play the current track from the sequence
         const playCurrentTrack = () => {
-            backgroundMusic.src = tracksToPlay[currentTrackIndex];
+            backgroundMusic.src = tracksToPlay[currentTrackIndex].url;
             backgroundMusic.volume = 0.15; // Lower volume further from 0.2 to 0.15
             backgroundMusic.load();
-            backgroundMusic.play().catch(err => {});
+
+            if (isMusicEnabled) {
+                backgroundMusic.play().catch(err => {});
+            }
 
             // Show track name
-            const trackName = tracksToPlay[currentTrackIndex].split('/').pop().split('.')[0];
+            const trackName = tracksToPlay[currentTrackIndex].name;
             showTrackInfo(trackName);
         };
 
@@ -101,7 +111,6 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundMusic.addEventListener('ended', () => {
             // Increment to the next track sequentially (not randomly)
             currentTrackIndex = (currentTrackIndex + 1) % tracksToPlay.length;
-            console.log(`Playing next track: ${currentTrackIndex + 1}/${tracksToPlay.length}`);
             playCurrentTrack();
         });
 
@@ -110,19 +119,17 @@ document.addEventListener('DOMContentLoaded', () => {
         fxButton.id = 'fx-toggle';
         fxButton.innerHTML = 'FX';
         fxButton.className = 'music-button'; // Use the same class to get the base styling
-
-        // Only override the position to place it next to the music button
-        // This way it inherits all the styling from the CSS class including
-        // the green border, glow effect and animations
-        // fxButton.style.left = '76px';
-        // fxButton.style.bottom = '8px';
-        // fxButton.style.top = 'auto';
-
         fxButton.title = "Sound Effects: On";
         document.getElementById('audio-controls').appendChild(fxButton);
 
-        // FX toggle state
-        window.soundFxEnabled = true;
+        // Get FX state from localStorage or default to true
+        window.soundFxEnabled = localStorage.getItem('soundFxEnabled') !== 'false';
+
+        // Update FX button appearance based on stored state
+        if (!window.soundFxEnabled) {
+            fxButton.title = "Sound Effects: Off";
+            fxButton.classList.add('muted');
+        }
 
         fxButton.addEventListener('click', () => {
             window.soundFxEnabled = !window.soundFxEnabled;
@@ -134,6 +141,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 fxButton.title = "Sound Effects: Off";
                 fxButton.classList.add('muted');
             }
+
+            // Save FX state to localStorage
+            localStorage.setItem('soundFxEnabled', window.soundFxEnabled);
         });
 
         // Local sound file paths
@@ -203,7 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cachedSound = soundCache[cacheKey];
 
                 if (!cachedSound) {
-                    console.warn(`Sound not found in cache: ${cacheKey}`);
                     return;
                 }
 
@@ -245,36 +254,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Play the cloned sound
                 sound.play().catch(err => {
-                    // Ignore errors like "DOMException: The play() request was interrupted..."
-                    // which can happen if sounds are triggered very rapidly.
+                    // Ignore errors
                 });
             } catch (err) {
-                console.error("Error in playSound:", err);
+                // Ignore errors
             }
         };
 
         // Set initial volume and play the first track
         playCurrentTrack();
 
+        // Update music button appearance based on stored state
+        if (!isMusicEnabled) {
+            musicIcon.className = 'fas fa-volume-mute';
+            musicButton.classList.add('muted');
+        }
+
         // Set up music toggle button
         if (musicButton) {
             musicButton.addEventListener('click', () => {
-                if (backgroundMusic.paused) {
-                    backgroundMusic.play();
-                    musicIcon.className = 'fas fa-volume-up';
-                    musicButton.classList.remove('muted');
-                } else {
+                if (isFirstMusicButtonClick) {
+                    isFirstMusicButtonClick = false;
+                    isMusicEnabled = false;
                     backgroundMusic.pause();
                     musicIcon.className = 'fas fa-volume-mute';
                     musicButton.classList.add('muted');
+                } else {
+                    if (backgroundMusic.paused) {
+                        isMusicEnabled = true;
+                        backgroundMusic.play().catch(err => {
+                            isMusicEnabled = false;
+                            musicIcon.className = 'fas fa-volume-mute';
+                            musicButton.classList.add('muted');
+                        });
+                        musicIcon.className = 'fas fa-volume-up';
+                        musicButton.classList.remove('muted');
+                    } else {
+                        isMusicEnabled = false;
+                        backgroundMusic.pause();
+                        musicIcon.className = 'fas fa-volume-mute';
+                        musicButton.classList.add('muted');
+                    }
                 }
+
+                // Save music state to localStorage
+                localStorage.setItem('musicEnabled', isMusicEnabled);
             });
         }
 
         // Add event listener to document that tries to play music on first interaction
         document.body.addEventListener('click', () => {
-            if (backgroundMusic.paused) {
-                backgroundMusic.play().catch(err => {});
+            if (isMusicEnabled && backgroundMusic.paused) {
+                backgroundMusic.play().catch(err => {
+                    // Ignore errors
+                });
+            } else {
+                // No action needed if music is already playing or button was clicked first
             }
         }, { once: true });
     };
@@ -375,236 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     debugPanelToggle.addEventListener('click', () => {
         const panel = document.getElementById('debug-panel');
         panel.classList.toggle('hidden');
-
-        // Add memory monitor when debug panel is shown
-        if (!panel.classList.contains('hidden')) {
-            addMemoryMonitor();
-        }
     });
-
-    // Add a memory and performance monitoring component for debugging
-    const addMemoryMonitor = () => {
-        // Check if we already have a memory monitor
-        let memoryMonitor = document.getElementById('memory-monitor');
-        if (memoryMonitor) return;
-
-        // Create memory monitor element
-        memoryMonitor = document.createElement('div');
-        memoryMonitor.id = 'memory-monitor';
-        memoryMonitor.style.position = 'fixed';
-        memoryMonitor.style.top = '40px';
-        memoryMonitor.style.right = '10px';
-        memoryMonitor.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        memoryMonitor.style.color = '#00ffff';
-        memoryMonitor.style.padding = '5px 10px';
-        memoryMonitor.style.borderRadius = '3px';
-        memoryMonitor.style.fontFamily = 'monospace';
-        memoryMonitor.style.fontSize = '14px';
-        memoryMonitor.style.zIndex = '1000';
-        document.body.appendChild(memoryMonitor);
-
-        // Add performance stats container
-        const perfStatsContainer = document.createElement('div');
-        perfStatsContainer.id = 'perf-stats';
-        perfStatsContainer.style.position = 'fixed';
-        perfStatsContainer.style.top = '70px';
-        perfStatsContainer.style.right = '10px';
-        perfStatsContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        perfStatsContainer.style.color = '#00ff00';
-        perfStatsContainer.style.padding = '5px 10px';
-        perfStatsContainer.style.borderRadius = '3px';
-        perfStatsContainer.style.fontFamily = 'monospace';
-        perfStatsContainer.style.fontSize = '14px';
-        perfStatsContainer.style.zIndex = '1000';
-        perfStatsContainer.style.maxWidth = '300px';
-        perfStatsContainer.style.maxHeight = '200px';
-        perfStatsContainer.style.overflow = 'auto';
-        document.body.appendChild(perfStatsContainer);
-
-        // Add entity counter container
-        const entityCounterContainer = document.createElement('div');
-        entityCounterContainer.id = 'entity-counter';
-        entityCounterContainer.style.position = 'fixed';
-        entityCounterContainer.style.top = '100px';
-        entityCounterContainer.style.right = '10px';
-        entityCounterContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        entityCounterContainer.style.color = '#ffaa00';
-        entityCounterContainer.style.padding = '5px 10px';
-        entityCounterContainer.style.borderRadius = '3px';
-        entityCounterContainer.style.fontFamily = 'monospace';
-        entityCounterContainer.style.fontSize = '14px';
-        entityCounterContainer.style.zIndex = '1000';
-        document.body.appendChild(entityCounterContainer);
-
-        // Update memory stats if performance API is available
-        if (window.performance && window.performance.memory) {
-            // Initial update
-            updateMemoryStats();
-
-            // Update regularly
-            setInterval(updateMemoryStats, 1000);
-        } else {
-            memoryMonitor.textContent = 'Memory stats unavailable';
-        }
-
-        // Update entity counts and performance metrics
-        setInterval(updateEntityCounts, 500);
-
-        // Start performance monitoring
-        setupPerformanceMonitoring();
-
-        function updateMemoryStats() {
-            const memoryInfo = window.performance.memory;
-            const usedHeap = Math.round(memoryInfo.usedJSHeapSize / (1024 * 1024));
-            const totalHeap = Math.round(memoryInfo.totalJSHeapSize / (1024 * 1024));
-            const limit = Math.round(memoryInfo.jsHeapSizeLimit / (1024 * 1024));
-
-            memoryMonitor.textContent = `Memory: ${usedHeap}MB / ${totalHeap}MB (${limit}MB limit)`;
-
-            // Color coding based on usage
-            const usageRatio = memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize;
-            if (usageRatio > 0.9) {
-                memoryMonitor.style.color = '#ff0000'; // Red for high usage
-            } else if (usageRatio > 0.7) {
-                memoryMonitor.style.color = '#ffff00'; // Yellow for moderate usage
-            } else {
-                memoryMonitor.style.color = '#00ffff'; // Cyan for normal usage
-            }
-        }
-
-        function updateEntityCounts() {
-            if (!window.game) return;
-
-            const entityCounter = document.getElementById('entity-counter');
-            const enemyCount = window.game.enemies.length;
-            const projectileCount = window.game.projectiles.length;
-            const towerCount = window.game.towers.length;
-            const totalCount = enemyCount + projectileCount + towerCount;
-
-            entityCounter.textContent = `Entities: ${totalCount} (E:${enemyCount} P:${projectileCount} T:${towerCount})`;
-
-            // Color coding based on entity count
-            if (totalCount > 300) {
-                entityCounter.style.color = '#ff0000'; // Red for high count
-            } else if (totalCount > 150) {
-                entityCounter.style.color = '#ffff00'; // Yellow for moderate count
-            } else {
-                entityCounter.style.color = '#ffaa00'; // Orange for normal count
-            }
-        }
-
-        function setupPerformanceMonitoring() {
-            // Only run in browsers that support the Performance API
-            if (!window.performance || !window.performance.now) return;
-
-            const perfStats = document.getElementById('perf-stats');
-            let lastUpdateTime = performance.now();
-            let frameTimes = [];
-            let gameUpdateTime = 0;
-            let renderTime = 0;
-            let enemyUpdateTime = 0;
-            let projectileUpdateTime = 0;
-
-            // Create counters for each operation
-            const perfCounters = {
-                gameUpdate: { time: 0, calls: 0 },
-                enemyUpdate: { time: 0, calls: 0 },
-                projectileUpdate: { time: 0, calls: 0 },
-                renderUpdate: { time: 0, calls: 0 },
-                pathfinding: { time: 0, calls: 0 }
-            };
-
-            // Patch the game update method to measure performance
-            if (window.game) {
-                // Patch performance monitoring into game methods if not already done
-                if (!window.game._performancePatched) {
-                    // Override the update method
-                    const originalUpdate = window.game.update;
-                    window.game.update = function(currentTime) {
-                        const startTime = performance.now();
-                        const result = originalUpdate.call(this, currentTime);
-                        const endTime = performance.now();
-
-                        gameUpdateTime = endTime - startTime;
-                        perfCounters.gameUpdate.time += gameUpdateTime;
-                        perfCounters.gameUpdate.calls++;
-
-                        return result;
-                    };
-
-                    // Override the updateEnemies method
-                    const originalUpdateEnemies = window.game.updateEnemies;
-                    window.game.updateEnemies = function() {
-                        const startTime = performance.now();
-                        const result = originalUpdateEnemies.call(this);
-                        const endTime = performance.now();
-
-                        enemyUpdateTime = endTime - startTime;
-                        perfCounters.enemyUpdate.time += enemyUpdateTime;
-                        perfCounters.enemyUpdate.calls++;
-
-                        return result;
-                    };
-
-                    // Override the updateProjectiles method
-                    const originalUpdateProjectiles = window.game.updateProjectiles;
-                    window.game.updateProjectiles = function() {
-                        const startTime = performance.now();
-                        const result = originalUpdateProjectiles.call(this);
-                        const endTime = performance.now();
-
-                        projectileUpdateTime = endTime - startTime;
-                        perfCounters.projectileUpdate.time += projectileUpdateTime;
-                        perfCounters.projectileUpdate.calls++;
-
-                        return result;
-                    };
-
-                    // Mark as patched
-                    window.game._performancePatched = true;
-                }
-            }
-
-            // Update performance stats every second
-            setInterval(() => {
-                const now = performance.now();
-                const elapsedTime = now - lastUpdateTime;
-                lastUpdateTime = now;
-
-                // Calculate average times
-                const avgGameUpdate = perfCounters.gameUpdate.calls > 0 ?
-                    perfCounters.gameUpdate.time / perfCounters.gameUpdate.calls : 0;
-
-                const avgEnemyUpdate = perfCounters.enemyUpdate.calls > 0 ?
-                    perfCounters.enemyUpdate.time / perfCounters.enemyUpdate.calls : 0;
-
-                const avgProjectileUpdate = perfCounters.projectileUpdate.calls > 0 ?
-                    perfCounters.projectileUpdate.time / perfCounters.projectileUpdate.calls : 0;
-
-                // Reset counters
-                Object.keys(perfCounters).forEach(key => {
-                    perfCounters[key].time = 0;
-                    perfCounters[key].calls = 0;
-                });
-
-                // Update the display with formatted data
-                perfStats.innerHTML = `
-                <div>Game Update: ${avgGameUpdate.toFixed(2)}ms</div>
-                <div>Enemy Update: ${avgEnemyUpdate.toFixed(2)}ms</div>
-                <div>Projectile Update: ${avgProjectileUpdate.toFixed(2)}ms</div>
-                `;
-
-                // Color code based on performance
-                if (avgGameUpdate > 16) { // More than 16ms per frame is below 60fps
-                    perfStats.style.color = '#ff0000'; // Red for poor performance
-                } else if (avgGameUpdate > 8) { // 8-16ms is acceptable
-                    perfStats.style.color = '#ffff00'; // Yellow for moderate performance
-                } else {
-                    perfStats.style.color = '#00ff00'; // Green for good performance
-                }
-            }, 1000);
-        }
-    };
 
     // Initially hide the debug panel toggle (will be shown when debug mode is enabled)
     debugPanelToggle.classList.add('hidden');
@@ -647,134 +453,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('debug-jump-to-wave5').addEventListener('click', () => {
         window.game.debugJumpToWave5();
     });
-
-    // Performance debugging tools
-    document.getElementById('debug-perf-snapshot').addEventListener('click', () => {
-        takePerformanceSnapshot();
-    });
-
-    document.getElementById('debug-profile-start').addEventListener('click', () => {
-        if (window.console && window.console.profile) {
-            window.console.profile('Game Performance Profile');
-            document.getElementById('debug-perf-report').innerHTML = '<div style="color: #00ff00">Profiling started...</div>';
-        } else {
-            document.getElementById('debug-perf-report').innerHTML = '<div style="color: #ff0000">Profiling not supported in this browser</div>';
-        }
-    });
-
-    document.getElementById('debug-profile-stop').addEventListener('click', () => {
-        if (window.console && window.console.profileEnd) {
-            window.console.profileEnd();
-            document.getElementById('debug-perf-report').innerHTML = '<div style="color: #00ff00">Profiling stopped. Check DevTools console.</div>';
-        }
-    });
-
-    document.getElementById('debug-gc').addEventListener('click', () => {
-        if (window.gc) {
-            window.gc();
-            document.getElementById('debug-perf-report').innerHTML = '<div style="color: #00ff00">Garbage collection requested</div>';
-        } else {
-            document.getElementById('debug-perf-report').innerHTML = '<div style="color: #ff0000">Manual GC not available. Try Chrome with --js-flags="--expose-gc"</div>';
-        }
-    });
-
-    function takePerformanceSnapshot() {
-        const report = document.getElementById('debug-perf-report');
-        if (!window.game) {
-            report.innerHTML = '<div style="color: #ff0000">Game not initialized</div>';
-            return;
-        }
-
-        // Take snapshot of current game state
-        const snapshot = {
-            time: new Date().toISOString(),
-            fps: window.game.fpsCounter.value,
-            entities: {
-                enemies: window.game.enemies.length,
-                projectiles: window.game.projectiles.length,
-                towers: window.game.towers.length
-            },
-            memory: window.performance.memory ? {
-                usedJSHeapSize: Math.round(window.performance.memory.usedJSHeapSize / (1024 * 1024)),
-                totalJSHeapSize: Math.round(window.performance.memory.totalJSHeapSize / (1024 * 1024))
-            } : null,
-            wave: window.game.currentWave,
-            activeWaves: window.game.activeWaves ? window.game.activeWaves.length : 0
-        };
-
-        // Format and display report
-        let reportHTML = `
-        <div style="color: #ffffff; margin-top: 10px; font-weight: bold">Performance Snapshot (${snapshot.time})</div>
-        <div>FPS: <span style="color: ${snapshot.fps < 30 ? '#ff0000' : '#00ff00'}">${snapshot.fps}</span></div>
-        <div>Enemies: ${snapshot.entities.enemies}</div>
-        <div>Projectiles: ${snapshot.entities.projectiles}</div>
-        <div>Towers: ${snapshot.entities.towers}</div>
-        `;
-
-        if (snapshot.memory) {
-            reportHTML += `<div>Memory: ${snapshot.memory.usedJSHeapSize}MB / ${snapshot.memory.totalJSHeapSize}MB</div>`;
-        }
-
-        reportHTML += `
-        <div>Wave: ${snapshot.wave} (Active: ${snapshot.activeWaves})</div>
-        <div style="margin-top: 5px;">
-            <button id="debug-perf-detailed" style="font-size: 12px; padding: 2px 5px;">Show Details</button>
-        </div>
-        `;
-
-        report.innerHTML = reportHTML;
-
-        // Add event listener for detailed report
-        document.getElementById('debug-perf-detailed').addEventListener('click', () => {
-            showDetailedReport(snapshot);
-        });
-    }
-
-    function showDetailedReport(snapshot) {
-        const report = document.getElementById('debug-perf-report');
-
-        // Collect detailed information
-        let enemyTypes = {};
-        let pathfindingCalls = 0;
-        let statusEffectsCount = 0;
-
-        // Count enemy types
-        window.game.enemies.forEach(enemy => {
-            enemyTypes[enemy.type] = (enemyTypes[enemy.type] || 0) + 1;
-            statusEffectsCount += enemy.statusEffects ? enemy.statusEffects.length : 0;
-        });
-
-        // Count pathfinding calls (requires instrumentation elsewhere)
-        pathfindingCalls = window.game._pathfindingCalls || 0;
-
-        // Format and display detailed report
-        let detailedHTML = `
-        <div style="color: #ffffff; margin-top: 10px; font-weight: bold">Detailed Performance Report</div>
-        <div style="font-size: 12px; margin-top: 5px;">Enemy Types:</div>
-        <ul style="font-size: 12px; margin: 2px 0; padding-left: 15px;">
-        `;
-
-        for (const [type, count] of Object.entries(enemyTypes)) {
-            detailedHTML += `<li>${type}: ${count}</li>`;
-        }
-
-        detailedHTML += `
-        </ul>
-        <div style="font-size: 12px;">Status Effects Active: ${statusEffectsCount}</div>
-        <div style="font-size: 12px;">Pathfinding Calls: ${pathfindingCalls}</div>
-
-        <div style="margin-top: 5px;">
-            <button id="debug-perf-summary" style="font-size: 12px; padding: 2px 5px;">Show Summary</button>
-        </div>
-        `;
-
-        report.innerHTML = detailedHTML;
-
-        // Add event listener to go back to summary
-        document.getElementById('debug-perf-summary').addEventListener('click', () => {
-            takePerformanceSnapshot();
-        });
-    }
 
     // Setup Send Next Wave button
     document.getElementById('send-next-wave-button').addEventListener('click', () => {

@@ -34,6 +34,7 @@ export class Map {
     }
 
     async initialize() {
+        console.log("Initializing map...");
         // Create grid data
         this.createGridData();
 
@@ -52,6 +53,10 @@ export class Map {
         // Create path waypoints for enemies to follow
         await this.createPathWaypoints();
 
+        // Explicitly set the path property
+        this.path = this.worldPathWaypoints;
+        console.log("Path initialized with", this.path ? this.path.length : 0, "waypoints");
+
         // Create path visualization
         this.createPathVisualization();
 
@@ -65,9 +70,13 @@ export class Map {
 
         // Store a copy of the original grid for reset
         this.originalGrid = this.grid.map(row => [...row]);
+
+        console.log("Map initialization complete");
+        return this.path;
     }
 
-    reset() {
+    async reset() {
+        console.log("Resetting map...");
         // Reset the grid dimensions to original values
         if (this.gridWidth !== this.originalGridWidth || this.gridHeight !== this.originalGridHeight) {
             console.log(`Resetting grid dimensions from ${this.gridWidth}x${this.gridHeight} to ${this.originalGridWidth}x${this.originalGridHeight}`);
@@ -80,36 +89,98 @@ export class Map {
 
         // Reset the grid to its original state
         if (this.originalGrid.length > 0) {
+            console.log("Restoring grid from original");
             this.grid = this.originalGrid.map(row => [...row]);
         } else {
             // If we don't have an original grid, recreate it
+            console.log("Recreating grid data");
             this.createGridData();
         }
 
+        // Clear any existing paths
+        this.pathWaypoints = [];
+        this.worldPathWaypoints = [];
+        this.path = null;
+
         // Rebuild the pathfinding navmesh
+        console.log("Rebuilding navmesh");
         this.pathfindingHelper.buildNavMesh();
 
         // Recreate path waypoints
-        this.recreatePathWaypoints();
+        console.log("Recreating path waypoints");
+        await this.recreatePathWaypoints();
 
-        // We DON'T recreate the map mesh here as that's handled by the renderer.cleanupScene
-        // and will be created when the game starts again
+        // Check if we need to recreate the 3D map representation
+        if (!this.mapGroup || !this.game.renderer.scene.children.includes(this.mapGroup)) {
+            console.log("3D map representation missing, recreating...");
+            this.mapGroup = this.game.renderer.createMap(this.grid, {
+                width: this.gridWidth,
+                height: this.gridHeight
+            });
+
+            // Store for easy access
+            this.mapMesh = this.mapGroup;
+
+            // Recreate path visualization
+            this.createPathVisualization();
+        }
+
+        console.log("Map reset complete. Path has", this.path ? this.path.length : 0, "waypoints");
+        return this.path;
     }
 
-    recreatePathWaypoints() {
+    async recreatePathWaypoints() {
         // Clear existing waypoints
         this.pathWaypoints = [];
+        this.worldPathWaypoints = [];
+        this.path = null;
 
-        // We'll use the same approach as in createPathWaypoints but without async
-        // This is a simplified version just for reset purposes
+        try {
+            // Use the center of the top row as start point
+            const startPoint = this.getStartPoint();
 
-        // For simplicity, create a direct line from top to bottom
-        const startPoint = this.getStartPoint();
-        const endPoint = this.getEndPoint();
+            // Use the center of the bottom row as end point
+            const endPoint = this.getEndPoint();
 
-        // Add these two points as waypoints
-        this.pathWaypoints.push(startPoint);
-        this.pathWaypoints.push(endPoint);
+            console.log("Finding path from", startPoint, "to", endPoint);
+
+            // Calculate path waypoints (in grid coordinates) using proper pathfinding
+            this.pathWaypoints = await this.pathfindingHelper.findPath(startPoint, endPoint);
+
+            console.log("Recreated pathWaypoints:", this.pathWaypoints);
+
+            if (!this.pathWaypoints || this.pathWaypoints.length === 0) {
+                console.error("Failed to create valid path with pathfinder - falling back to direct line");
+                // Fallback to simple direct path if pathfinding fails
+                this.pathWaypoints = [startPoint, endPoint];
+            }
+
+            // Convert grid positions to world positions for visualization and enemy movement
+            this.worldPathWaypoints = this.pathWaypoints.map(point =>
+                this.gridToWorld(point.x, point.z)
+            );
+
+            // Set the path property that the game uses for enemy movement
+            this.path = this.worldPathWaypoints;
+
+            console.log("Recreated path with", this.path ? this.path.length : 0, "waypoints");
+
+            // Recreate path visualization if needed
+            this.createPathVisualization();
+
+            return this.path;
+        } catch (error) {
+            console.error("Error recreating path waypoints:", error);
+            // Create a fallback path in case of error
+            const startPoint = this.getStartPoint();
+            const endPoint = this.getEndPoint();
+            this.pathWaypoints = [startPoint, endPoint];
+            this.worldPathWaypoints = this.pathWaypoints.map(point =>
+                this.gridToWorld(point.x, point.z)
+            );
+            this.path = this.worldPathWaypoints;
+            return this.path;
+        }
     }
 
     createGridData() {
@@ -168,13 +239,29 @@ export class Map {
         // Use the center of the bottom row as end point
         const endPoint = { x: Math.floor(this.gridWidth / 2), z: this.gridHeight - 1 };
 
+        console.log("Finding path from", startPoint, "to", endPoint);
+
         // Calculate path waypoints (in grid coordinates)
         this.pathWaypoints = await this.pathfindingHelper.findPath(startPoint, endPoint);
+
+        console.log("Path finding complete, path length:", this.pathWaypoints ? this.pathWaypoints.length : 0);
+
+        // If pathfinding failed, create a simple direct line
+        if (!this.pathWaypoints || this.pathWaypoints.length === 0) {
+            console.warn("Pathfinding failed to create a valid path - using direct line fallback");
+            this.pathWaypoints = [startPoint, endPoint];
+        }
 
         // Convert grid positions to world positions for visualization
         this.worldPathWaypoints = this.pathWaypoints.map(point =>
             this.gridToWorld(point.x, point.z)
         );
+
+        // Explicitly set the path property that enemies use for movement
+        this.path = this.worldPathWaypoints;
+        console.log("Created path with", this.path.length, "waypoints");
+
+        return this.pathWaypoints;
     }
 
     createPathVisualization() {
@@ -376,24 +463,47 @@ export class Map {
         // Force all enemies to recalculate their paths
         if (this.game.enemies) {
             // Clear the path cache since the grid has changed
-            if (this.game.cachedPaths && typeof this.game.cachedPaths.clear === 'function') {
-                this.game.cachedPaths.clear();
+            if (typeof this.game.clearPathCache === 'function') {
+                this.game.clearPathCache();
             }
-            
-            // Only update enemies that need new paths
-            for (const enemy of this.game.enemies) {
-                if (!enemy.reachedEnd) {
-                    enemy.recalculatePath();
-                }
-            }
+
+            // Mark last path update time to force recalculation for all enemies
+            this.game.lastPathUpdate = performance.now();
         }
     }
 
     removeTower(gridX, gridY) {
-        // Mark cell as walkable again (not empty)
+        // Find the tower at this grid position
+        const worldPos = this.gridToWorld(gridX, gridY);
+        const towersAtPosition = this.game.towers.filter(tower =>
+            tower.gridPosition &&
+            tower.gridPosition.gridX === gridX &&
+            tower.gridPosition.gridY === gridY
+        );
+
+        // Remove the tower if found
+        for (const tower of towersAtPosition) {
+            // Call the tower cleanup method
+            if (tower.cleanup) {
+                tower.cleanup();
+            } else if (tower.towerInstance) {
+                this.game.renderer.removeTower(tower.towerInstance);
+            } else if (tower.mesh) {
+                // Fallback for compatibility with old tower system
+                this.game.renderer.scene.remove(tower.mesh);
+            }
+
+            // Remove from the game's towers array
+            const index = this.game.towers.indexOf(tower);
+            if (index !== -1) {
+                this.game.towers.splice(index, 1);
+            }
+        }
+
+        // Mark cell as walkable again
         this.grid[gridY][gridX] = 1;
 
-        // Recalculate path if needed
+        // Recalculate path
         this.updatePathfinding();
     }
 
@@ -418,10 +528,16 @@ export class Map {
         // Create new path visualization
         this.createPathVisualization();
 
-        // Notify enemies to recalculate their paths
+        // Force path recalculation for all enemies
         if (this.game.enemies) {
-            for (const enemy of this.game.enemies) {
-                enemy.recalculatePath();
+            // Clear path cache
+            if (typeof this.game.clearPathCache === 'function') {
+                this.game.clearPathCache();
+            }
+
+            // Mark last path update time to force recalculation for all enemies
+            if (this.game.lastPathUpdate !== undefined) {
+                this.game.lastPathUpdate = performance.now();
             }
         }
     }

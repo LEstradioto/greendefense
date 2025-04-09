@@ -233,21 +233,66 @@ export class Projectile {
 
         // Check for collision with target
         this.checkCollision();
+
+        // Check if projectile is too far from the original tower
+        this.checkDistance();
+    }
+
+    // New method to check distance from firing tower
+    checkDistance() {
+        // Skip if we don't have an origin position
+        if (!this.originTower || !this.originTower.position) return;
+
+        // Calculate distance from origin tower
+        const distance = this.game.calculateDistance(this.position, this.originTower.position);
+
+        // Self-destruct if beyond range + some margin
+        if (distance > this.originTower.range * 1.2) {
+            this.hit = true;
+
+            // Fade out quickly instead of just disappearing
+            if (this.mesh) {
+                // Create a quick fade out animation
+                const startTime = performance.now();
+                const duration = 150; // Very quick fade out (150ms)
+
+                this.game.addAnimationEffect({
+                    startTime: startTime,
+                    duration: duration,
+                    update: (progress) => {
+                        // Fade out and shrink
+                        if (this.mesh.material) {
+                            this.mesh.material.opacity = 1 - progress;
+                        }
+                        const scale = 1 - (progress * 0.8);
+                        this.mesh.scale.set(scale, scale, scale);
+
+                        // When complete
+                        if (progress >= 1) {
+                            return true; // Animation complete
+                        }
+                        return false; // Animation still running
+                    }
+                });
+            }
+
+            // For projectiles with area effect, create a small impact effect
+            if (this.areaOfEffect > 0 && Math.random() < 0.5) {
+                this.createSimpleExplosionEffect();
+            }
+        }
     }
 
     // Simplified explosion effect for low performance mode
     createSimpleExplosionEffect() {
-        if (!this.game.renderer) return;
+        if (!this.game.renderer || this.game.lowQualityMode && Math.random() > 0.6) {
+            return; // Skip creating any particles
+        }
 
         // Get color based on element
         let color = 0xFF6600;
         if (this.element && ElementStyles[this.element]) {
             color = ElementStyles[this.element].color;
-        }
-
-        // Disable all particle explosions
-        if (true) {
-            return; // Skip creating any particles
         }
 
         // Create a very simple explosion (just a few particles)
@@ -301,11 +346,11 @@ export class Projectile {
         const startTime = performance.now();
         const duration = 300; // Just 0.3 seconds
 
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        // Add to game's animation system instead of creating a new loop
+        this.game.addAnimationEffect({
+            startTime: startTime,
+            duration: duration,
+            update: (progress) => {
                 explosionGroup.children.forEach(particle => {
                     const { initialScale, finalScale, speed } = particle.userData;
 
@@ -317,21 +362,22 @@ export class Projectile {
                     particle.material.opacity = 0.3 * (1 - progress);
                 });
 
-                requestAnimationFrame(animate);
-            } else {
-                // Quick cleanup
-                while (explosionGroup.children.length > 0) {
-                    const particle = explosionGroup.children[0];
-                    explosionGroup.remove(particle);
-                    if (particle.geometry) particle.geometry.dispose();
-                    if (particle.material) particle.material.dispose();
+                // When complete
+                if (progress >= 1) {
+                    // Quick cleanup
+                    while (explosionGroup.children.length > 0) {
+                        const particle = explosionGroup.children[0];
+                        explosionGroup.remove(particle);
+                        if (particle.geometry) particle.geometry.dispose();
+                        if (particle.material) particle.material.dispose();
+                    }
+
+                    this.game.renderer.scene.remove(explosionGroup);
+                    return true; // Animation complete
                 }
-
-                this.game.renderer.scene.remove(explosionGroup);
+                return false; // Animation still running
             }
-        };
-
-        animate();
+        });
     }
 
     // Simpler trail effect for low performance mode
@@ -358,22 +404,24 @@ export class Projectile {
         const startTime = performance.now();
         const duration = 300; // 0.3 seconds - shorter lifetime
 
-        // Only animate opacity, not scale
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        // Add to game's animation system instead of creating a new loop
+        this.game.addAnimationEffect({
+            startTime: startTime,
+            duration: duration,
+            update: (progress) => {
+                // Only animate opacity, not scale
                 particleMaterial.opacity = 0.5 * (1 - progress);
-                requestAnimationFrame(animate);
-            } else {
-                this.game.renderer.scene.remove(particle);
-                particleGeometry.dispose();
-                particleMaterial.dispose();
-            }
-        };
 
-        animate();
+                // When complete
+                if (progress >= 1) {
+                    this.game.renderer.scene.remove(particle);
+                    particleGeometry.dispose();
+                    particleMaterial.dispose();
+                    return true; // Animation complete
+                }
+                return false; // Animation still running
+            }
+        });
     }
 
     createTrailEffect() {
@@ -401,26 +449,27 @@ export class Projectile {
         const startTime = performance.now();
         const duration = 250; // 0.25 seconds (halved from 0.5)
 
-        const animate = () => {
-            const elapsed = performance.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            if (progress < 1) {
+        // Add to game's animation system instead of creating a new loop
+        this.game.addAnimationEffect({
+            startTime: startTime,
+            duration: duration,
+            update: (progress) => {
                 // Simple fade out only - no scaling to reduce calculations
                 particleMaterial.opacity = 0.5 * (1 - progress);
 
-                requestAnimationFrame(animate);
-            } else {
-                // Clean up resources
-                if (particle.geometry) particle.geometry.dispose();
-                if (particle.material) particle.material.dispose();
+                // When complete
+                if (progress >= 1) {
+                    // Clean up resources
+                    if (particle.geometry) particle.geometry.dispose();
+                    if (particle.material) particle.material.dispose();
 
-                // Remove particle
-                this.game.renderer.scene.remove(particle);
+                    // Remove particle
+                    this.game.renderer.scene.remove(particle);
+                    return true; // Animation complete
+                }
+                return false; // Animation still running
             }
-        };
-
-        animate();
+        });
     }
 
     checkCollision() {

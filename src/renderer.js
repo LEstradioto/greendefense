@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ElementTypes, ElementStyles } from './elements.js';
+import { TowerInstanceManager } from './managers/TowerInstanceManager.js';
+import { EnemyInstanceManager } from './managers/EnemyInstanceManager.js';
+
+// Tower instance manager to handle instanced meshes
+// Tower instance manager to handle instanced meshes
+// Moved to src/managers/TowerInstanceManager.js
 
 export class Renderer {
     constructor(canvas, game) {
@@ -12,6 +18,10 @@ export class Renderer {
         // For performance optimizations
         this.distanceVector = new THREE.Vector3(); // Reusable vector for distance calculations
 
+        // Shared vectors
+        this._tempVector1 = new THREE.Vector3();
+        this._tempVector2 = new THREE.Vector3();
+
         // Set up renderer with enhanced quality settings
         // Enable stencil buffer to prevent unwanted rendering artifacts with ground plane
         this.renderer = new THREE.WebGLRenderer({
@@ -19,8 +29,8 @@ export class Renderer {
             antialias: true,
             powerPreference: 'high-performance',
             alpha: true,
-            preserveDrawingBuffer: true,
-            stencil: true // Enable stencil buffer
+            // preserveDrawingBuffer: true,
+            // stencil: true // Enable stencil buffer
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x000000); // Black background
@@ -53,7 +63,7 @@ export class Renderer {
         this.controls.maxPolarAngle = Math.PI / 2.5; // Limit camera angle
 
         // Set up zoom constraints and initial state
-        this.controls.minDistance = 10;
+        this.controls.minDistance = 30;
         this.controls.maxDistance = 150;
         this.controls.enableDamping = true; // Smooth camera movement
         this.controls.dampingFactor = 0.05; // More fluid zooming
@@ -322,6 +332,26 @@ export class Renderer {
         this.gridHighlight.visible = false;
         this.gridHighlight.renderOrder = 100; // Very high render order to ensure it's on top
         this.scene.add(this.gridHighlight);
+
+        // Tower instances tracking
+        this.towerInstances = [];
+        this.nextShadowIndex = 0;
+
+        // Initialize after materials and geometries are set up
+        // After all materials and geometries are defined, initialize the tower instance manager
+        this.towerManager = new TowerInstanceManager(this);
+
+        // Initialize enemy instance manager
+        this.enemyManager = new EnemyInstanceManager(this);
+
+        // Initialize performance optimizations
+        this.quality = 'normal';
+        this._frameCount = 0;
+        this.frustum = new THREE.Frustum();
+        this.particleSystems = [];
+
+        // Keep a reference to the game instance
+        this.game = game;
     }
 
     setupLights() {
@@ -336,20 +366,31 @@ export class Renderer {
         directionalLight.position.set(15, 40, 15); // Higher and more angled for longer shadows
         directionalLight.castShadow = true;
 
-        // Adjust shadow properties for maximum quality
-        directionalLight.shadow.mapSize.width = 4096; // Very high resolution shadow map
-        directionalLight.shadow.mapSize.height = 4096;
-        directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 80; // Extended range
-        directionalLight.shadow.camera.left = -30;
-        directionalLight.shadow.camera.right = 30;
-        directionalLight.shadow.camera.top = 30;
-        directionalLight.shadow.camera.bottom = -30;
+        // Optimize shadow properties for better performance
+        directionalLight.shadow.mapSize.width = 512; // Reduced from 1024 for better performance
+        directionalLight.shadow.mapSize.height = 512; // Reduced from 1024 for better performance
+        directionalLight.shadow.camera.near = 1;
+        directionalLight.shadow.camera.far = 60; // Reduced from 80 - still covers the scene
+        directionalLight.shadow.camera.left = -20; // Smaller shadow camera frustum
+        directionalLight.shadow.camera.right = 20;
+        directionalLight.shadow.camera.top = 20;
+        directionalLight.shadow.camera.bottom = -20;
 
-        // Improve shadow quality and darkness
-        directionalLight.shadow.bias = -0.0001; // Reduces shadow acne
-        directionalLight.shadow.normalBias = 0.01; // Helps with thin objects
-        directionalLight.shadow.darkness = 0.8; // More intense shadow darkness
+        // Optimize shadow quality and bias for performance
+        directionalLight.shadow.bias = -0.001; // Slightly increased to reduce artifacts with fewer samples
+        directionalLight.shadow.normalBias = 0.01;
+        if (directionalLight.shadow.darkness !== undefined) {
+            directionalLight.shadow.darkness = 0.8;
+        }
+
+        // Make shadows update less frequently if FPS gets low
+        if (this.game && this.game.fpsCounter && this.game.fpsCounter.value < 30) {
+            directionalLight.shadow.autoUpdate = false;
+            // Update manually at a lower frequency
+            setInterval(() => {
+                directionalLight.shadow.needsUpdate = true;
+            }, 500); // Update shadow map every 500ms instead of every frame
+        }
 
         this.scene.add(directionalLight);
 
@@ -367,25 +408,6 @@ export class Renderer {
         fillLight.position.set(-15, 20, -15);
         // Don't add shadows for fill light (simplifies shadow rendering)
         this.scene.add(fillLight);
-
-        // Add spot light for dramatic tower shadows
-        const spotLight = new THREE.SpotLight(0xffffff, 0.8);
-        spotLight.position.set(0, 25, 5);
-        spotLight.angle = Math.PI / 4;
-        spotLight.penumbra = 0.1;
-        spotLight.decay = 1;
-        spotLight.distance = 80;
-        spotLight.castShadow = true;
-        spotLight.shadow.mapSize.width = 2048;
-        spotLight.shadow.mapSize.height = 2048;
-        spotLight.shadow.camera.near = 1;
-        spotLight.shadow.camera.far = 80;
-        this.scene.add(spotLight);
-
-        // Add subtle rim light for cartoon effect
-        const rimLight = new THREE.DirectionalLight(0x80ff80, 0.3);
-        rimLight.position.set(0, 10, -20);
-        this.scene.add(rimLight);
     }
 
     // Helper method to get distance from camera to a position
@@ -394,25 +416,11 @@ export class Renderer {
         return this.distanceVector.length();
     }
 
-    setQualityLevel(level) {
-        if (level === 'low') {
-            // Lower quality settings for better performance
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-            this.renderer.shadowMap.enabled = true; // Always keep shadows enabled
-            this.particleCount = 0; // No particles in low quality
-            this.quality = 'low';
-        } else {
-            // Normal quality settings
-            this.renderer.setPixelRatio(window.devicePixelRatio);
-            this.renderer.shadowMap.enabled = true;
-            this.particleCount = 0; // No particles even in normal quality
-            this.quality = 'normal';
-        }
-    }
-
     render(game) {
         // Update camera controls
-        this.controls.update();
+        if (this.controls) {
+            this.controls.update();
+        }
 
         // Update rotation state - if it's been more than 50ms since a control update,
         // we can consider the rotation to have stopped (much more responsive)
@@ -445,7 +453,12 @@ export class Renderer {
         }
 
         // Toggle debug helpers
-        this.gridHelper.visible = game.debugMode;
+        if (this.gridHelper) {
+            this.gridHelper.visible = game.debugMode;
+        }
+
+        // Update all tower range indicators to match debug mode state
+        this.updateTowerRangeIndicators(game.debugMode);
 
         // Toggle shadow camera helper in debug mode
         if (this.shadowHelper) {
@@ -455,11 +468,38 @@ export class Renderer {
         // Get current time
         const currentTime = performance.now() / 1000; // Convert to seconds for easier animation timing
 
-        // Animate tower glows and particles
-        game.towers.forEach(tower => {
-            if (tower.mesh) {
-                // Find the glow and particles in the tower mesh
-                tower.mesh.traverse(child => {
+        // Update frustum for culling every few frames to improve performance
+        this._frameCount++;
+        if (this._frameCount % 5 === 0) { // Only recalculate every 5 frames
+            this.camera.updateMatrixWorld(); // Ensure matrix is updated
+            const projScreenMatrix = new THREE.Matrix4();
+            projScreenMatrix.multiplyMatrices(
+                this.camera.projectionMatrix,
+                this.camera.matrixWorldInverse
+            );
+            this.frustum.setFromProjectionMatrix(projScreenMatrix);
+        }
+
+
+        // Animate tower glows and particles with frustum culling
+        this.towerInstances.forEach(towerInstance => {
+            // Skip animation updates for off-screen towers
+            if (towerInstance.position) {
+                // Create a bounding sphere for culling test (reuse object to reduce garbage)
+                const boundingSphere = new THREE.Sphere(
+                    new THREE.Vector3(towerInstance.position.x, towerInstance.position.y, towerInstance.position.z),
+                    2.0 // Radius large enough to cover the tower
+                );
+
+                // Skip if not in view frustum
+                if (!this.frustum.intersectsSphere(boundingSphere)) {
+                    return;
+                }
+            }
+
+            if (towerInstance.topGroup) {
+                // Find the glow and particles in the tower top group
+                towerInstance.topGroup.traverse(child => {
                     // Animate glow effect
                     if (child.isMesh && child.material && child.material.side === THREE.BackSide) {
                         // Pulse the glow
@@ -471,7 +511,7 @@ export class Renderer {
                         child.material.opacity = baseOpacity + pulseAmount * Math.sin(currentTime * pulseSpeed * Math.PI);
 
                         // If tower is empowered, make glow stronger
-                        if (tower.empowered) {
+                        if (towerInstance.tower && towerInstance.tower.empowered) {
                             child.material.opacity += 0.2;
                             child.scale.set(1.2, 1.2, 1.2);
                         } else {
@@ -482,7 +522,7 @@ export class Renderer {
                     // Animate particle effects
                     if (child.isPoints) {
                         // Rotate particles around the tower
-                        const particlePhase = tower.mesh.userData.particleAnimationPhase || 0;
+                        const particlePhase = towerInstance.topGroup.userData.particleAnimationPhase || 0;
                         const positions = child.geometry.attributes.position.array;
                         const particleCount = positions.length / 3;
 
@@ -504,212 +544,7 @@ export class Renderer {
             }
         });
 
-        // Animate projectile trails
-        game.projectiles.forEach(projectile => {
-            // First update the shadow projector if it exists
-            if (projectile.mesh && projectile.mesh.userData.shadowProjector) {
-                const shadowPlane = projectile.mesh.userData.shadowProjector;
-                const currentPos = projectile.mesh.position;
-
-                // Project the shadow onto the ground
-                shadowPlane.position.x = currentPos.x;
-                shadowPlane.position.y = 0.01; // Just above ground
-                shadowPlane.position.z = currentPos.z;
-
-                // Scale shadow based on height (further = smaller shadow)
-                const distance = Math.max(0.5, currentPos.y);
-                const scale = 0.3 + (0.7 / distance); // Inverse scale with height
-                shadowPlane.scale.set(scale, scale, 1);
-
-                // Fade shadow with height
-                const opacity = Math.min(0.5, 0.5 / distance);
-                shadowPlane.material.opacity = opacity;
-            }
-
-            // Then update particles if they exist
-            if (projectile.mesh && projectile.mesh.userData.particles) {
-                const particles = projectile.mesh.userData.particles;
-                const positions = particles.geometry.attributes.position.array;
-                const particleCount = positions.length / 3;
-                const particleAges = projectile.mesh.userData.particleAge;
-                const maxAge = projectile.mesh.userData.particleMaxAge;
-                const lastPos = projectile.mesh.userData.lastPosition;
-                const currentPos = projectile.mesh.position;
-
-                // Calculate delta time (assume ~60fps for simplicity)
-                const deltaTime = 1/60;
-
-                // Update each particle
-                for (let i = 0; i < particleCount; i++) {
-                    const i3 = i * 3;
-
-                    // Age the particle
-                    particleAges[i] += deltaTime;
-
-                    // If particle is too old, reset it to current position with a small random offset
-                    if (particleAges[i] > maxAge) {
-                        positions[i3] = (Math.random() - 0.5) * 0.1;
-                        positions[i3 + 1] = (Math.random() - 0.5) * 0.1;
-                        positions[i3 + 2] = (Math.random() - 0.5) * 0.1;
-                        particleAges[i] = 0;
-                    }
-                }
-
-                // Update last position
-                projectile.mesh.userData.lastPosition = {
-                    x: currentPos.x,
-                    y: currentPos.y,
-                    z: currentPos.z
-                };
-
-                // Update geometry
-                particles.geometry.attributes.position.needsUpdate = true;
-            }
-        });
-
-        // Animate enemies
-        game.enemies.forEach(enemy => {
-            if (enemy.mesh) {
-                // Basic animation based on enemy type
-                const baseType = enemy.type.split('_').pop();
-                switch (baseType) {
-                    case 'simple':
-                        // Simple enemies wobble
-                        enemy.mesh.rotation.x = 0.2 * Math.sin(currentTime * 2);
-                        enemy.mesh.rotation.z = 0.2 * Math.cos(currentTime * 2);
-                        break;
-                    case 'elephant':
-                        // Elephants sway
-                        enemy.mesh.rotation.y = 0.1 * Math.sin(currentTime);
-                        break;
-                    case 'pirate':
-                        // Pirates spin slowly
-                        enemy.mesh.rotation.y += 0.01;
-                        break;
-                    case 'golem':
-                        // Golems pulse
-                        const scale = 1 + 0.05 * Math.sin(currentTime * 1.5);
-                        enemy.mesh.scale.set(scale, scale, scale);
-                        break;
-                }
-
-                // Animate elemental particles if present
-                if (enemy.mesh.userData.elementParticles) {
-                    const particles = enemy.mesh.userData.elementParticles;
-                    const positions = particles.geometry.attributes.position.array;
-                    const particleCount = positions.length / 3;
-
-                    for (let i = 0; i < particleCount; i++) {
-                        const i3 = i * 3;
-                        const angle = (currentTime + i) * 2;
-                        const radius = 0.4 + 0.1 * Math.sin(currentTime * 3 + i);
-
-                        // Update particle positions based on element type
-                        switch (enemy.mesh.userData.elementType) {
-                            case 'fire':
-                                // Fire particles move up and outward
-                                positions[i3] = radius * Math.cos(angle);
-                                positions[i3+1] = 0.1 + 0.2 * Math.sin(currentTime * 4 + i);
-                                positions[i3+2] = radius * Math.sin(angle);
-                                break;
-                            case 'water':
-                                // Water particles flow in circles
-                                positions[i3] = radius * Math.cos(angle * 0.5);
-                                positions[i3+1] = 0.1 * Math.sin(currentTime * 2 + i);
-                                positions[i3+2] = radius * Math.sin(angle * 0.5);
-                                break;
-                            case 'earth':
-                                // Earth particles orbit slowly
-                                positions[i3] = radius * Math.cos(angle * 0.3);
-                                positions[i3+1] = 0.05 * Math.sin(currentTime + i);
-                                positions[i3+2] = radius * Math.sin(angle * 0.3);
-                                break;
-                            case 'air':
-                                // Air particles move quickly and chaotically
-                                positions[i3] = radius * Math.cos(angle * 2);
-                                positions[i3+1] = 0.2 * Math.sin(currentTime * 5 + i);
-                                positions[i3+2] = radius * Math.sin(angle * 2);
-                                break;
-                            case 'shadow':
-                                // Shadow particles pulse in and out
-                                const pulseRadius = 0.3 + 0.3 * Math.sin(currentTime + i);
-                                positions[i3] = pulseRadius * Math.cos(angle * 0.7);
-                                positions[i3+1] = 0.1 * Math.sin(currentTime * 1.5 + i);
-                                positions[i3+2] = pulseRadius * Math.sin(angle * 0.7);
-                                break;
-                        }
-                    }
-
-                    particles.geometry.attributes.position.needsUpdate = true;
-                }
-
-                // Enemies with status effects get visual indicators
-                if (enemy.statusEffects && enemy.statusEffects.length > 0) {
-                    // If enemy doesn't have an effect indicator, create one
-                    if (!enemy.mesh.userData.effectIndicator) {
-                        // Create effect indicator based on first status effect
-                        const effect = enemy.statusEffects[0];
-                        let effectColor = 0xFFFFFF;
-
-                        // Choose color based on effect type
-                        if (effect.type === 'burn') effectColor = 0xFF5722;
-                        else if (effect.type === 'slow') effectColor = 0x2196F3;
-                        else if (effect.type === 'weaken') effectColor = 0x9C27B0;
-
-                        // Create glow effect
-                        const effectGeometry = new THREE.SphereGeometry(0.4, 12, 12);
-                        const effectMaterial = new THREE.MeshBasicMaterial({
-                            color: effectColor,
-                            transparent: true,
-                            opacity: 0.3,
-                            side: THREE.BackSide,
-                            blending: THREE.AdditiveBlending
-                        });
-
-                        const effectMesh = new THREE.Mesh(effectGeometry, effectMaterial);
-                        enemy.mesh.add(effectMesh);
-                        enemy.mesh.userData.effectIndicator = effectMesh;
-                    }
-
-                    // Pulse the effect indicator
-                    const effectIndicator = enemy.mesh.userData.effectIndicator;
-                    if (effectIndicator) {
-                        const pulseAmount = 0.2;
-                        effectIndicator.material.opacity = 0.3 + pulseAmount * Math.sin(currentTime * 4);
-                    }
-                } else if (enemy.mesh.userData.effectIndicator) {
-                    // Remove effect indicator if no active effects
-                    enemy.mesh.remove(enemy.mesh.userData.effectIndicator);
-                    enemy.mesh.userData.effectIndicator = null;
-                }
-            }
-        });
-
-        // Animate map glow effects
-        if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer) {
-            const glowLayer = game.map.mapGroup.userData.glowLayer;
-
-            // More pronounced pulsing for the ground glow
-            const pulseAmount = 0.05;
-            const pulseSpeed = 0.3; // Slightly faster pulse
-            glowLayer.material.opacity = 0.12 + pulseAmount * Math.sin(currentTime * pulseSpeed);
-
-            // Also pulse the color slightly to enhance the effect
-            const hue = 0.35 + 0.02 * Math.sin(currentTime * pulseSpeed * 0.7); // Subtle hue shift around green
-            glowLayer.material.color.setHSL(hue, 0.8, 0.6);
-        }
-
-        // Adjust any dynamic shadow parameters
-        if (this.mainLight && this.mainLight.shadow) {
-            // Keep shadows strong and crisp
-            this.mainLight.shadow.bias = -0.0001;
-
-            // Optional: adjust shadow strength dynamically
-            const shadowStrength = 0.8; // Higher values = stronger shadows (0-1)
-            if (this.mainLight.shadow.darkness !== undefined) { // Some THREE.js versions use this
-                this.mainLight.shadow.darkness = shadowStrength;
-            }
-        }
+        // Rest of render method content...
 
         // Custom render process with stencil buffer to fix ground rendering issues
 
@@ -747,6 +582,23 @@ export class Renderer {
 
         // 4. Final pass: render the entire scene
         this.renderer.render(this.scene, this.camera);
+    }
+
+    // Utility method to update all tower range indicators
+    updateTowerRangeIndicators(debugMode) {
+        // Update all tower range indicators based on debug mode
+        for (const towerInstance of this.towerInstances) {
+            if (towerInstance && towerInstance.topGroup &&
+                towerInstance.topGroup.userData &&
+                towerInstance.topGroup.userData.rangeIndicator) {
+
+                // Force visibility to match debug mode
+                const indicator = towerInstance.topGroup.userData.rangeIndicator;
+                if (indicator.visible !== debugMode) {
+                    indicator.visible = debugMode;
+                }
+            }
+        }
     }
 
     createMap(mapData, gridSize) {
@@ -1007,266 +859,107 @@ export class Renderer {
     }
 
     createEnemy(enemy) {
-        let geometry;
-        let material;
+        // Ensure instance managers are initialized
+        if (!this.enemyInstanceManager) {
+            console.log("Enemy instance manager not found, initializing now");
+            this.initializeInstanceManagers();
+        }
 
-        // Extract base type and element
-        let baseType = enemy.type;
-        let elementType = 'neutral';
+        // Create the enemy using the instance manager
+        if (this.enemyInstanceManager) {
+            const enemyInstance = this.enemyInstanceManager.createEnemy(enemy);
 
-        // Set up shadow properties for all enemies
-        this.enemyShadowIntensity = 0.95; // Make shadows very strong
+            // // Update the enemy's position immediately to ensure it appears at the right spot
+            // if (enemyInstance && enemy.position) {
+            //     this.enemyInstanceManager.updateEnemyPosition(
+            //         enemyInstance.baseType,
+            //         enemyInstance.elementType,
+            //         enemyInstance.instanceIndex,
+            //         enemy.position
+            //     );
 
-        // Check if enemy type contains an element
-        const elements = ['fire', 'water', 'earth', 'air', 'shadow'];
-        for (const element of elements) {
-            if (enemy.type.startsWith(element + '_')) {
-                elementType = element;
-                baseType = enemy.type.substring(element.length + 1);
-                break;
+            //     // Also update instance position for future reference
+            //     enemyInstance.position.copy(enemy.position);
+
+            //     // Make sure health bar is properly positioned
+            //     if (enemyInstance.healthBar && enemyInstance.healthBar.group) {
+            //         enemyInstance.healthBar.group.position.set(
+            //             enemy.position.x,
+            //             enemy.position.y + 1,
+            //             enemy.position.z
+            //         );
+            //     }
+            // }
+
+            return enemyInstance;
+        }
+
+        console.error("Failed to create enemy: Enemy instance manager is not available");
+        return null;
+    }
+
+    removeEnemy(enemy) {
+        // If the enemy has an enemyInstance, use that to remove it
+        if (enemy.enemyInstance) {
+            this.enemyInstanceManager.removeEnemy(enemy.enemyInstance);
+            enemy.enemyInstance = null;
+            return;
+        }
+
+        // Fallback to old method for any existing enemies
+        if (enemy.mesh) {
+            // Remove mesh from scene
+            this.scene.remove(enemy.mesh);
+
+            // Properly dispose of all geometries and materials
+            if (enemy.mesh.geometry) {
+                enemy.mesh.geometry.dispose();
             }
-        }
 
-        // Create mesh based on enemy type
-        switch (baseType) {
-            case 'simple':
-                geometry = new THREE.SphereGeometry(0.3, 16, 16);
-                break;
-            case 'elephant':
-                geometry = new THREE.BoxGeometry(0.5, 0.5, 0.7);
-                break;
-            case 'pirate':
-                geometry = new THREE.ConeGeometry(0.3, 0.8, 5);
-                break;
-            case 'golem':
-                // Create a more complex shape for golem
-                geometry = new THREE.DodecahedronGeometry(0.4, 0);
-                break;
-            default:
-                geometry = new THREE.SphereGeometry(0.3, 16, 16);
-        }
-
-        // Create material based on element
-        switch (elementType) {
-            case 'fire':
-                material = new THREE.MeshStandardMaterial({
-                    color: 0xe74c3c,
-                    emissive: 0xc0392b,
-                    emissiveIntensity: 0.5,
-                    roughness: 0.7,
-                    metalness: 0.3
-                });
-                break;
-            case 'water':
-                material = new THREE.MeshStandardMaterial({
-                    color: 0x3498db,
-                    emissive: 0x2980b9,
-                    emissiveIntensity: 0.3,
-                    roughness: 0.3,
-                    metalness: 0.7,
-                    transparent: true,
-                    opacity: 0.9
-                });
-                break;
-            case 'earth':
-                material = new THREE.MeshStandardMaterial({
-                    color: 0x27ae60,
-                    emissive: 0x229954,
-                    emissiveIntensity: 0.2,
-                    roughness: 0.9,
-                    metalness: 0.1
-                });
-                break;
-            case 'air':
-                material = new THREE.MeshStandardMaterial({
-                    color: 0xecf0f1,
-                    emissive: 0xbdc3c7,
-                    emissiveIntensity: 0.3,
-                    roughness: 0.4,
-                    metalness: 0.6,
-                    transparent: true,
-                    opacity: 0.8
-                });
-                break;
-            case 'shadow':
-                material = new THREE.MeshStandardMaterial({
-                    color: 0x9b59b6,
-                    emissive: 0x8e44ad,
-                    emissiveIntensity: 0.4,
-                    roughness: 0.5,
-                    metalness: 0.5
-                });
-                break;
-            default:
-                // Different colors for different enemy types
-                switch (baseType) {
-                    case 'simple':
-                        material = new THREE.MeshStandardMaterial({
-                            color: 0x95a5a6,
-                            roughness: 0.5,
-                            metalness: 0.3
-                        });
-                        break;
-                    case 'elephant':
-                        material = new THREE.MeshStandardMaterial({
-                            color: 0x7f8c8d,
-                            roughness: 0.8,
-                            metalness: 0.1
-                        });
-                        break;
-                    case 'pirate':
-                        material = new THREE.MeshStandardMaterial({
-                            color: 0x34495e,
-                            roughness: 0.6,
-                            metalness: 0.4
-                        });
-                        break;
-                    case 'golem':
-                        material = new THREE.MeshStandardMaterial({
-                            color: 0x2c3e50,
-                            roughness: 0.9,
-                            metalness: 0.2
-                        });
-                        break;
-                    default:
-                        material = this.materials.simpleEnemy;
+            if (enemy.mesh.material) {
+                if (Array.isArray(enemy.mesh.material)) {
+                    enemy.mesh.material.forEach(m => m.dispose());
+                } else {
+                    enemy.mesh.material.dispose();
                 }
-        }
-
-        // Force shadow casting on all enemy materials
-        if (material) {
-            material.shadowSide = THREE.FrontSide; // Force proper shadow rendering
-            material.transparent = true; // Ensure transparency works with shadows
-            material.opacity = 0.95; // Very subtle transparency to improve shadow quality
-        }
-
-        const mesh = new THREE.Mesh(geometry, material);
-        // Enhanced shadow settings for enemies
-        mesh.castShadow = true;
-        mesh.receiveShadow = true; // Allow enemies to receive shadows from other objects
-
-        // Add a dark shadow plane below the enemy that moves with it
-        const shadowSize = 0.6; // Size of shadow plane
-        const shadowPlane = new THREE.Mesh(
-            new THREE.PlaneGeometry(shadowSize, shadowSize),
-            new THREE.MeshBasicMaterial({
-                color: 0x000000,
-                transparent: true,
-                opacity: 0.4, // Dark but see-through shadow
-                depthWrite: false // Prevent z-fighting
-            })
-        );
-        shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
-        shadowPlane.position.y = -0.49; // Just above ground level
-        mesh.add(shadowPlane); // Add to enemy so it moves with it
-
-        // Add some decorative features based on enemy type
-        if (baseType === 'elephant') {
-            // Add "tusks" to elephant
-            const tuskGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8);
-
-            const tusk1 = new THREE.Mesh(
-                tuskGeometry,
-                new THREE.MeshStandardMaterial({
-                    color: 0xecf0f1,
-                    roughness: 0.5
-                })
-            );
-            tusk1.position.set(0.15, -0.1, 0.3);
-            tusk1.rotation.x = Math.PI / 3;
-
-            const tusk2 = tusk1.clone();
-            tusk2.position.set(-0.15, -0.1, 0.3);
-
-            mesh.add(tusk1, tusk2);
-        } else if (baseType === 'pirate') {
-            // Add "hat" to pirate
-            const hatGeometry = new THREE.CylinderGeometry(0.2, 0.4, 0.1, 8);
-            const hat = new THREE.Mesh(
-                hatGeometry,
-                new THREE.MeshStandardMaterial({
-                    color: 0x2c3e50,
-                    roughness: 0.7
-                })
-            );
-            hat.position.set(0, 0.3, 0);
-
-            mesh.add(hat);
-        } else if (baseType === 'golem') {
-            // Add glowing eyes to golem
-            const eyeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-            const eyeMaterial = new THREE.MeshBasicMaterial({
-                color: elementType === 'neutral' ? 0xff0000 : material.color,
-                emissive: material.emissive,
-                emissiveIntensity: 1.0
-            });
-
-            const eye1 = new THREE.Mesh(eyeGeometry, eyeMaterial);
-            eye1.position.set(0.15, 0.1, 0.3);
-
-            const eye2 = eye1.clone();
-            eye2.position.set(-0.15, 0.1, 0.3);
-
-            mesh.add(eye1, eye2);
-        }
-
-        // Add elemental effect based on type
-        if (elementType !== 'neutral') {
-            // Add glow effect
-            const glowGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-            const glowColor = material.color.clone();
-
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: glowColor,
-                transparent: true,
-                opacity: 0.3,
-                side: THREE.BackSide
-            });
-
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            mesh.add(glow);
-
-            // Add elemental particles
-            const particleCount = 5;
-            const particleGeometry = new THREE.BufferGeometry();
-            const particlePositions = new Float32Array(particleCount * 3);
-
-            for (let i = 0; i < particleCount; i++) {
-                const i3 = i * 3;
-                const angle = Math.random() * Math.PI * 2;
-                const radius = 0.4;
-
-                particlePositions[i3] = Math.cos(angle) * radius;
-                particlePositions[i3+1] = (Math.random() - 0.5) * 0.5;
-                particlePositions[i3+2] = Math.sin(angle) * radius;
             }
 
-            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            // Clean up any child meshes
+            if (enemy.mesh.children) {
+                enemy.mesh.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                });
+            }
 
-            const particleMaterial = new THREE.PointsMaterial({
-                color: glowColor,
-                size: 0.08,
-                transparent: true,
-                opacity: 0.7
-            });
-
-            const particles = new THREE.Points(particleGeometry, particleMaterial);
-            mesh.add(particles);
-
-            // Store for animation
-            mesh.userData.elementParticles = particles;
-            mesh.userData.elementType = elementType;
+            // Remove reference
+            enemy.mesh = null;
         }
 
-        // Add health bar
-        const healthBarData = this.createHealthBar();
-        mesh.add(healthBarData.group);
+        // Also remove any health bars
+        if (enemy.healthBar && enemy.healthBar.group) {
+            this.scene.remove(enemy.healthBar.group);
+            enemy.healthBar = null;
+        }
+    }
 
-        // Store the health bar data in the mesh's userData for later access
-        mesh.userData.healthBar = healthBarData;
+    updateHealth(entity, healthPercent) {
+        // Check if this is an enemy with the new instance system
+        if (entity.enemyInstance) {
+            this.enemyManager.updateHealthBar(entity.enemyInstance, healthPercent);
+            return;
+        }
 
-        this.scene.add(mesh);
-        return mesh;
+        // Legacy implementation for compatibility
+        if (entity.healthBar) {
+            this.updateHealthBar(entity.healthBar, healthPercent);
+        }
     }
 
     createHealthBar() {
@@ -1317,473 +1010,46 @@ export class Renderer {
     }
 
     createTower(tower) {
-        // Create a group for the tower and its components
-        const towerGroup = new THREE.Group();
-        // Get pre-created materials based on element
-        const elementKey = tower.element || ElementTypes.NEUTRAL; // Ensure key exists
-        const baseMaterial = this.materials.towerBases[elementKey];
-        const topMaterial = this.materials.towerTops[elementKey];
-        const foundationMaterial = this.materials.towerFoundations[elementKey];
-
-
-        // Determine if this is a special tower (only elemental towers, not cannon/doubleArrow)
-        // Special towers: any tower with elemental type (excluding cannon and doubleArrow)
-        const isSpecialTower = tower.element !== ElementTypes.NEUTRAL;
-
-        // Get element style if tower has an element
-        // const elementStyle = tower.element && ElementStyles[tower.element] ?
-        //     ElementStyles[tower.element] :
-        //     { color: 0x388E3C, emissive: 0x2E7D32, particleColor: 0x4CAF50 };
-
-        // Create materials based on element --- REMOVED, using cached materials now
-
-
-        // Create the tower base - taller for better visibility
-        const base = new THREE.Mesh(this.geometries.towerBase, baseMaterial);
-        base.position.y = 0.3; // Position above ground, higher now
-
-        // Add a wider foundation base connecting to the ground - thicker and wider
-        const foundation = new THREE.Mesh(this.geometries.towerFoundation, foundationMaterial);
-        foundation.position.y = 0.05; // Slightly above ground level to prevent z-fighting
-
-
-        // Enhanced shadow settings for tower base
-        base.castShadow = true;
-        base.receiveShadow = true;
-        foundation.castShadow = false; // Foundation mainly for visual connection, can skip shadow
-        foundation.receiveShadow = true;
-
-
-        // Create a shadow effect using a blob decal instead of a plane
-        // Use the cached shadow geometry and material
-        const shadowPlane = new THREE.Mesh(this.geometries.towerShadow, this.materials.towerShadow);
-        shadowPlane.rotation.x = -Math.PI / 2; // Align with ground
-        shadowPlane.position.y = 0.02; // Just above ground level
-        shadowPlane.renderOrder = -1; // Render before other objects
-        towerGroup.add(shadowPlane); // Add shadow
-
-        towerGroup.add(base);
-        towerGroup.add(foundation); // Add foundation to connect tower to ground
-
-        // Add top part - different for each tower type
-        let top;
-
-        // Check if it's an elemental tower type
-        if (tower.type.includes('_')) {
-            // It's an elemental tower, extract the element and level
-            const [element, level] = tower.type.split('_');
-
-            // Create more visually unique towers based on element
-            switch (element) {
-                case 'fire':
-                    // Fire tower - flame or volcano-like shape with particles
-                    const fireGroup = new THREE.Group();
-
-                    // Base shape for fire tower (tapered cylinder)
-                    const fireCone = new THREE.Mesh(
-                        this.geometries.fireBasicTop, // Use cached geometry
-                        topMaterial // Use cached material
-                    );
-                    fireCone.position.y = 0.9; // Higher to match taller base
-                    fireGroup.add(fireCone);
-
-                    // For advanced fire tower, add extra details
-                    if (level === 'advanced') {
-                        // Add a center flame
-                        const flameCore = new THREE.Mesh(
-                            this.geometries.fireAdvancedCore, // Use cached geometry
-                            this.materials.towerSpecial['fireAdvancedCore'] // Use cached material
-                        );
-                        flameCore.position.y = 1.0;
-                        fireGroup.add(flameCore);
-                    }
-
-                    top = fireGroup;
-                    break;
-
-                case 'water':
-                    // Water tower - flowing, curved shape
-                    const waterGroup = new THREE.Group();
-
-                    // Sphere base for water tower
-                    const waterSphere = new THREE.Mesh(
-                        this.geometries.waterBasicTop, // Use cached geometry
-                        topMaterial // Use cached material
-                    );
-                    waterSphere.position.y = 0.9;
-                    waterGroup.add(waterSphere);
-
-                    // Add water jets/fountains for advanced tower
-                    if (level === 'advanced') {
-                        // Create multiple curved tubes
-                        // Tube geometry needs to be dynamic based on curve, keep creating it here
-                        const tubeMaterial = this.materials.towerSpecial['waterAdvancedTube']; // Reuse material
-                        for (let i = 0; i < 3; i++) {
-                            const curve = new THREE.QuadraticBezierCurve3(
-                                new THREE.Vector3(0, 0.7, 0),
-                                new THREE.Vector3(Math.cos(i * Math.PI * 2/3) * 0.3, 1.0, Math.sin(i * Math.PI * 2/3) * 0.3),
-                                new THREE.Vector3(Math.cos(i * Math.PI * 2/3) * 0.2, 1.2, Math.sin(i * Math.PI * 2/3) * 0.2)
-                            );
-
-                            const tubeGeometry = new THREE.TubeGeometry(curve, 8, 0.05, 8, false); // Create geometry
-                            // tubeMaterial created inside loop before - now reuse
-
-                            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial); // Use cached material
-                            waterGroup.add(tube);
-                        }
-                    }
-
-                    top = waterGroup;
-                    break;
-
-                case 'earth':
-                    // Earth tower - rocky, solid shape
-                    const earthGroup = new THREE.Group();
-
-                    // Create a base rock formation
-                    const rockBase = new THREE.Mesh(
-                        this.geometries.earthBasicTop, // Use cached geometry
-                        topMaterial // Use cached material
-                    );
-                    rockBase.position.y = 0.9;
-                    earthGroup.add(rockBase);
-
-                    // For advanced, add extra rock formations
-                    if (level === 'advanced') {
-                        // Add smaller rocks on top
-                         const smallRockGeometry = this.geometries.earthAdvancedRock; // Reuse geometry
-                        for (let i = 0; i < 3; i++) {
-                            const smallRock = new THREE.Mesh(
-                                smallRockGeometry, // Use cached geometry
-                                topMaterial // Use same material as base rock
-                            );
-
-                            // Position randomly on top of base
-                            smallRock.position.set(
-                                (Math.random() - 0.5) * 0.3,
-                                0.9 + Math.random() * 0.2,
-                                (Math.random() - 0.5) * 0.3
-                            );
-
-                            // Random rotation
-                            smallRock.rotation.set(
-                                Math.random() * Math.PI,
-                                Math.random() * Math.PI,
-                                Math.random() * Math.PI
-                            );
-
-                            earthGroup.add(smallRock);
-                        }
-                    }
-
-                    top = earthGroup;
-                    break;
-
-                case 'air':
-                    // Air tower - light, airy design with motion
-                    const airGroup = new THREE.Group();
-                    const airOrbMaterial = this.materials.towerSpecial['airOrb']; // Reuse material
-                    const airRingMaterial = this.materials.towerSpecial['airRing']; // Reuse material
-
-                    // Create a central floating orb
-                    const airOrb = new THREE.Mesh(
-                        this.geometries.airOrb, // Use cached geometry
-                        airOrbMaterial // Use cached material
-                    );
-                    airOrb.position.y = 0.8;
-                    airGroup.add(airOrb);
-
-                    // Add floating rings for both basic and advanced
-                    const ringCount = level === 'advanced' ? 3 : 1;
-                    const ringGeometry = this.geometries.airRing; // Reuse geometry
-                    for (let i = 0; i < ringCount; i++) {
-                        const ring = new THREE.Mesh(
-                            ringGeometry, // Use cached geometry
-                            airRingMaterial // Use cached material
-                        );
-
-                        // Position around orb
-                        ring.position.y = 0.8;
-
-                        // Set different orientations
-                        if (i === 0) {
-                            ring.rotation.x = Math.PI/2;
-                        } else if (i === 1) {
-                            ring.rotation.y = Math.PI/2;
-                        }
-
-                        airGroup.add(ring);
-
-                        // Store in userData for animation
-                        airGroup.userData.rings = airGroup.userData.rings || [];
-                        airGroup.userData.rings.push(ring);
-                    }
-
-                    top = airGroup;
-                    break;
-
-                case 'shadow':
-                    // Shadow tower - dark, mysterious with void effects
-                    const shadowGroup = new THREE.Group();
-                    const shadowCoreMaterial = this.materials.towerSpecial['shadowCore']; // Reuse material
-
-                    // Create a dark core
-                    const shadowCore = new THREE.Mesh(
-                        this.geometries.shadowBasicTop, // Use cached geometry
-                        shadowCoreMaterial // Use cached material
-                    );
-                    shadowCore.position.y = 0.9;
-                    shadowGroup.add(shadowCore);
-
-                    // Add floating dark matter particles
-                    if (level === 'advanced') {
-                        // Add extra void sphere
-                        const voidSphere = new THREE.Mesh(
-                            this.geometries.shadowAdvancedVoid, // Use cached geometry
-                            this.materials.towerSpecial['shadowAdvancedVoid'] // Use cached material
-                        );
-                        voidSphere.position.y = 0.9;
-                        shadowGroup.add(voidSphere);
-                    }
-
-                    top = shadowGroup;
-                    break;
-
-                default:
-                    // Fallback to basic tower shape
-                    top = new THREE.Mesh(
-                        this.geometries.defaultTop, // Use cached geometry
-                        topMaterial // Use cached material
-                    );
-                    top.position.y = 0.9;
-            }
-        } else {
-            // Standard tower types
-            switch (tower.type) {
-                case 'arrow':
-                    // Create a group for arrow tower top
-                    const arrowGroup = new THREE.Group();
-
-                    // Base top shape
-                    const topMesh = new THREE.Mesh(this.geometries.arrowTopBase, topMaterial); // Use cached
-                    topMesh.position.y = 0.9; // Position above the base
-                    arrowGroup.add(topMesh);
-
-                    // Create a rotation group for the nose that will rotate
-                    const noseRotationGroup = new THREE.Group();
-                    noseRotationGroup.position.set(0, 0.9, 0);
-
-                    // Add an arrow-shaped nose (bigger)
-                    const arrowNose = new THREE.Mesh(
-                        this.geometries.arrowNose, // Use cached geometry
-                        topMaterial // Use same material as top base
-                    );
-
-                    // Position the arrow nose inside the rotation group
-                    // The cone points along its Y axis by default
-                    arrowNose.position.set(0, 0.2, 0);
-                    arrowNose.rotation.x = -Math.PI/2; // Make it point forward (z-axis)
-
-                    // Add to rotation group
-                    noseRotationGroup.add(arrowNose);
-
-                    // Add rotation group to main group and set it as the nose for rotation
-                    arrowGroup.add(noseRotationGroup);
-                    arrowGroup.userData.nose = noseRotationGroup;
-
-                    top = arrowGroup;
-                    break;
-
-                case 'doubleArrow':
-                    // Double-pointed top for double arrow tower
-                    const doubleTopGroup = new THREE.Group();
-                    const coneGeometry = this.geometries.doubleArrowTopCone; // Reuse geometry
-
-                    // Base cone structures
-                    const cone1 = new THREE.Mesh(coneGeometry, topMaterial); // Use cached
-                    cone1.position.set(0.2, 0.7, 0);
-                    cone1.rotation.z = Math.PI/10;
-
-                    const cone2 = new THREE.Mesh(coneGeometry, topMaterial); // Use cached
-                    cone2.position.set(-0.2, 0.7, 0);
-                    cone2.rotation.z = -Math.PI/10;
-
-                    doubleTopGroup.add(cone1, cone2);
-
-                    // Create a rotation group for the nose that will rotate
-                    const doubleArrowRotationGroup = new THREE.Group();
-                    doubleArrowRotationGroup.position.set(0, 0.7, 0);
-
-                    // Create the double arrow nose inside the rotation group
-                    const doubleArrowNoseGroup = new THREE.Group();
-                    const noseArrowGeometry = this.geometries.doubleArrowNose; // Reuse geometry
-
-                    // Create two bigger arrows side by side
-                    const noseArrow1 = new THREE.Mesh(noseArrowGeometry, topMaterial); // Use cached
-                    noseArrow1.position.set(0.12, 0.15, 0);
-                    noseArrow1.rotation.x = -Math.PI/2; // Point forward
-
-                    const noseArrow2 = new THREE.Mesh(noseArrowGeometry, topMaterial); // Use cached
-                    noseArrow2.position.set(-0.12, 0.15, 0);
-                    noseArrow2.rotation.x = -Math.PI/2; // Point forward
-
-                    doubleArrowNoseGroup.add(noseArrow1, noseArrow2);
-
-                    // Add the double arrow group to the rotation group
-                    doubleArrowRotationGroup.add(doubleArrowNoseGroup);
-
-                    // Add rotation group to main group and set it as the nose for rotation
-                    doubleTopGroup.add(doubleArrowRotationGroup);
-                    doubleTopGroup.userData.nose = doubleArrowRotationGroup;
-
-                    top = doubleTopGroup;
-                    break;
-
-                case 'cannon':
-                    // Sphere and cylinder for cannon tower
-                    const cannonGroup = new THREE.Group();
-
-                    const sphere = new THREE.Mesh(this.geometries.cannonTopSphere, topMaterial); // Use cached
-                    sphere.position.y = 0.9;
-
-                    // Create a rotation group for the nose (barrel) that will rotate
-                    const cannonRotationGroup = new THREE.Group();
-                    cannonRotationGroup.position.set(0, 0.9, 0);
-
-                    // Create barrel which will serve as the rotatable nose
-                    const barrel = new THREE.Mesh(
-                        this.geometries.cannonBarrel, // Use cached geometry
-                        this.materials.towerSpecial['cannonBarrel'] // Use cached material
-                    );
-
-                    // Position and orient barrel inside the rotation group
-                    // The cylinder points along its Y axis by default
-                    barrel.position.set(0, 0, 0.3); // Move forward a bit
-                    barrel.rotation.x = Math.PI/2; // Make it point forward (z-axis)
-
-                    // Add barrel to rotation group
-                    cannonRotationGroup.add(barrel);
-
-                    // Add sphere and cannonRotationGroup to main group
-                    cannonGroup.add(sphere);
-                    cannonGroup.add(cannonRotationGroup);
-
-                    // Store rotation group reference to enable rotation
-                    cannonGroup.userData.nose = cannonRotationGroup;
-
-                    top = cannonGroup;
-                    break;
-
-                default:
-                    // Default simple top
-                    top = new THREE.Mesh(
-                        this.geometries.defaultTop, // Use cached geometry
-                        topMaterial // Use cached material
-                    );
-                    top.position.y = 0.9;
-            }
+        // Ensure instance managers are initialized
+        if (!this.towerInstanceManager) {
+            console.log("Tower instance manager not found, initializing now");
+            this.initializeInstanceManagers();
         }
 
-        // Enhanced shadow settings for tower tops
-        // Apply shadow casting to the top-level group and let traverse handle children
-        top.castShadow = true;
-        top.receiveShadow = true;
+        // Get normalized element key
+        const elementKey = tower.element.toLowerCase();
 
-        // Make sure all parts of nested groups can cast shadows (if needed)
-        // This might be redundant if the top group itself casts shadow,
-        // but explicit setting ensures correctness. Revisit if performance issues arise.
-        if (top.isGroup) {
-            top.traverse(child => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
+        // Create tower instance using instance manager
+        const instanceIndex = this.towerInstanceManager.getNextIndex(elementKey);
+
+        if (instanceIndex === -1) {
+            console.error(`Failed to create tower: no available instance slot for element ${elementKey}`);
+            return null;
         }
 
-        towerGroup.add(top);
+        // Update tower positions using the instance manager
+        this.towerInstanceManager.updateBasePosition(elementKey, instanceIndex, tower.position);
+        this.towerInstanceManager.updateFoundationPosition(elementKey, instanceIndex, tower.position);
 
-        // IMPORTANT: Transfer nose reference from top group to towerGroup
-        // This is critical for rotation to work
-        if (top.userData && top.userData.nose) {
-            towerGroup.userData.nose = top.userData.nose;
-            // console.log(`Transferred nose reference from ${tower.type} top to towerGroup`);
+        // Add top based on tower type
+        let topType = 'default';
+        if (tower.type.includes('cannon')) {
+            topType = 'cannon';
+        } else if (tower.type.includes('double')) {
+            topType = 'doubleArrow';
+        } else if (tower.type.includes('arrow')) {
+            topType = 'arrow';
         }
 
-        // Add a glow effect only to special towers
-        if (isSpecialTower) {
-            // Create glow mesh using cached geometry and base material
-            const glowMaterial = this.materials.towerGlow.clone(); // Clone base glow material
-             const elementStyle = ElementStyles[elementKey];
-             if (elementStyle && elementStyle.particleColor) {
-                 glowMaterial.color.setHex(elementStyle.particleColor); // Set specific color
-             } else {
-                 glowMaterial.color.setHex(0xFFFFFF); // Default white glow if no style found
-             }
-             glowMaterial.needsUpdate = true; // Important after cloning and modification
+        this.towerInstanceManager.updateTopPosition(elementKey, instanceIndex, tower.position, topType);
 
-
-            const glow = new THREE.Mesh(this.geometries.towerGlow, glowMaterial); // Use cached geometry
-            glow.position.y = 1.0; // Position at the top part - higher now for taller towers
-            glow.renderOrder = 5; // Ensure proper rendering order
-            towerGroup.add(glow);
-        }
-
-        // For more powerful towers or elemental types, add particle effects
-        if (isSpecialTower) {
-            // Particle creation logic remains largely the same,
-            // but could potentially reuse BufferGeometry attributes if particles are identical
-            // For now, keeping particle creation dynamic as it might vary significantly.
-
-            const particleGeometry = new THREE.BufferGeometry();
-            const particleCount = 10;
-            const particlePositions = new Float32Array(particleCount * 3);
-            const particleColors = new Float32Array(particleCount * 3); // Add colors
-
-            const elementStyle = ElementStyles[elementKey];
-            const particleColor = new THREE.Color(elementStyle ? elementStyle.particleColor : 0xFFFFFF);
-
-            // Create particles around the tower
-            for (let i = 0; i < particleCount; i++) {
-                const i3 = i * 3;
-                // Random position in a sphere shell
-                 const radius = 0.7 + Math.random() * 0.2; // Slightly larger radius
-                 const theta = Math.random() * Math.PI * 2;
-                 const phi = Math.acos(2 * Math.random() - 1); // More uniform sphere distribution
-
-
-                particlePositions[i3] = radius * Math.sin(phi) * Math.cos(theta);
-                particlePositions[i3 + 1] = 1.0 + radius * Math.cos(phi); // Center around y=1.0
-                particlePositions[i3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-
-                // Set color
-                particleColors[i3] = particleColor.r;
-                particleColors[i3 + 1] = particleColor.g;
-                particleColors[i3 + 2] = particleColor.b;
-            }
-
-            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-            particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3)); // Set color attribute
-
-            const particleMaterial = new THREE.PointsMaterial({
-                size: 0.15, // Larger particle size
-                sizeAttenuation: true,
-                // color: elementStyle ? elementStyle.particleColor : 0xFFFFFF, // Use vertex colors instead
-                vertexColors: true, // Enable vertex colors
-                transparent: true,
-                opacity: 0.7,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false // Prevent particles writing to depth buffer
-            });
-
-            const particles = new THREE.Points(particleGeometry, particleMaterial);
-            particles.userData.isParticleSystem = true; // Flag for potential updates
-            towerGroup.add(particles);
-            towerGroup.userData.particles = particles; // Store reference for animation/updates
-        }
-
-
-        return towerGroup;
+        // Return tower instance reference
+        return {
+            elementKey,
+            instanceIndex,
+            topType,
+            position: new THREE.Vector3(tower.position.x, tower.position.y, tower.position.z)
+        };
     }
 
     createProjectile(projectile) {
@@ -2254,13 +1520,79 @@ export class Renderer {
         console.log("Cleaning up scene...");
         console.log("Initial scene children count:", this.scene.children.length);
 
-        // Instead of keeping objects, let's just remove everything but create a new clean scene
-        // This is more reliable for preventing duplicate objects
+        // Reset instance managers if they exist
+        if (this.towerInstanceManager) {
+            console.log("Resetting tower instance manager...");
+            this.towerInstanceManager.reset();
+        }
 
-        // Clear the entire scene
-        while (this.scene.children.length > 0) {
-            const obj = this.scene.children[0];
-            this.scene.remove(obj);
+        if (this.enemyInstanceManager) {
+            console.log("Resetting enemy instance manager...");
+            this.enemyInstanceManager.reset();
+        }
+
+        // Keep references to objects we want to preserve
+        const keepObjects = [];
+
+        // Save references to important lights
+        const lights = this.scene.children.filter(child =>
+            child instanceof THREE.DirectionalLight ||
+            child instanceof THREE.AmbientLight ||
+            child instanceof THREE.HemisphereLight);
+
+        keepObjects.push(...lights);
+
+        // Keep the map group if it exists
+        const mapGroup = this.scene.children.find(child =>
+            child.userData && (child.userData.ground || child.userData.glowLayer));
+
+        if (mapGroup) {
+            console.log("Preserving map group");
+            keepObjects.push(mapGroup);
+        }
+
+        // Keep instance manager objects if they exist
+        if (this.towerInstanceManager) {
+            console.log("Preserving tower instance meshes");
+            // Find and preserve all tower instance meshes
+            for (const elementKey in this.towerInstanceManager.towerBases) {
+                keepObjects.push(this.towerInstanceManager.towerBases[elementKey]);
+                keepObjects.push(this.towerInstanceManager.towerFoundations[elementKey]);
+
+                for (const topType in this.towerInstanceManager.towerTops[elementKey]) {
+                    keepObjects.push(this.towerInstanceManager.towerTops[elementKey][topType]);
+                }
+            }
+        }
+
+        if (this.enemyInstanceManager) {
+            console.log("Preserving enemy instance meshes");
+            // Find and preserve all enemy instance meshes
+            for (const baseType in this.enemyInstanceManager.enemyMeshes) {
+                for (const elementType in this.enemyInstanceManager.enemyMeshes[baseType]) {
+                    keepObjects.push(this.enemyInstanceManager.enemyMeshes[baseType][elementType]);
+                }
+            }
+        }
+
+        console.log(`Objects to preserve: ${keepObjects.length}`);
+
+        // Clear the scene except objects we want to keep
+        for (let i = this.scene.children.length - 1; i >= 0; i--) {
+            const obj = this.scene.children[i];
+            if (!keepObjects.includes(obj)) {
+                this.scene.remove(obj);
+
+                // Only dispose of geometries/materials for objects we don't want to keep
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(m => m.dispose());
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            }
         }
 
         // Reset the scene to initial state
@@ -2283,6 +1615,129 @@ export class Renderer {
         this.scene.add(this.gridHighlight);
 
         console.log("Scene cleanup complete. Scene children count:", this.scene.children.length);
+    }
+
+    // Properly dispose all resources to prevent memory leaks
+    dispose() {
+        console.log("Disposing renderer and resources...");
+
+        // Dispose all materials
+        Object.values(this.materials).forEach(material => {
+            if (material) {
+                if (typeof material === 'object') {
+                    if (material.dispose) material.dispose();
+
+                    // Handle nested material collections
+                    if (material.constructor === Object) {
+                        Object.values(material).forEach(subMaterial => {
+                            if (subMaterial && subMaterial.dispose) subMaterial.dispose();
+                        });
+                    }
+                }
+            }
+        });
+
+        // Dispose all geometries
+        Object.values(this.geometries).forEach(geometry => {
+            if (geometry && geometry.dispose) geometry.dispose();
+        });
+
+        // Dispose instance managers
+        if (this.towerInstanceManager && this.towerInstanceManager.dispose) {
+            this.towerInstanceManager.dispose();
+        }
+
+        if (this.enemyInstanceManager && this.enemyInstanceManager.dispose) {
+            this.enemyInstanceManager.dispose();
+        }
+
+        // Remove all scene objects
+        while(this.scene.children.length > 0) {
+            const obj = this.scene.children[0];
+            this.scene.remove(obj);
+        }
+
+        // Dispose the scene itself
+        if (this.scene.dispose) this.scene.dispose();
+
+        // Dispose renderer
+        if (this.renderer) {
+            this.renderer.dispose();
+            // Force release of context
+            this.renderer.forceContextLoss();
+            this.renderer.context = null;
+            this.renderer.domElement = null;
+        }
+
+        // Remove event listeners
+        if (this.controls) {
+            this.controls.dispose();
+        }
+
+        window.removeEventListener('resize', this.onWindowResize.bind(this));
+
+        console.log("Renderer disposed");
+    }
+
+    // Initialize or re-initialize instance managers
+    initializeInstanceManagers() {
+        console.log("Initializing instance managers...");
+
+        // Initialize tower instance manager if it doesn't exist yet
+        if (!this.towerInstanceManager) {
+            console.log("Creating new TowerInstanceManager");
+            this.towerInstanceManager = new TowerInstanceManager(this);
+        } else {
+            // Reset existing manager
+            console.log("Resetting existing TowerInstanceManager");
+            this.towerInstanceManager.reset();
+        }
+
+        // Initialize enemy instance manager if it doesn't exist yet
+        if (!this.enemyInstanceManager) {
+            console.log("Creating new EnemyInstanceManager");
+            this.enemyInstanceManager = new EnemyInstanceManager(this);
+        } else {
+            // Reset existing manager
+            console.log("Resetting existing EnemyInstanceManager");
+            this.enemyInstanceManager.reset();
+        }
+
+        // Ensure all instance meshes are in the scene
+        for (const elementKey in this.towerInstanceManager.towerBases) {
+            const base = this.towerInstanceManager.towerBases[elementKey];
+            if (base && !this.scene.children.includes(base)) {
+                console.log(`Re-adding tower base mesh for ${elementKey} to scene`);
+                this.scene.add(base);
+            }
+
+            const foundation = this.towerInstanceManager.towerFoundations[elementKey];
+            if (foundation && !this.scene.children.includes(foundation)) {
+                console.log(`Re-adding tower foundation mesh for ${elementKey} to scene`);
+                this.scene.add(foundation);
+            }
+
+            for (const topType in this.towerInstanceManager.towerTops[elementKey]) {
+                const top = this.towerInstanceManager.towerTops[elementKey][topType];
+                if (top && !this.scene.children.includes(top)) {
+                    console.log(`Re-adding tower top mesh (${topType}) for ${elementKey} to scene`);
+                    this.scene.add(top);
+                }
+            }
+        }
+
+        // Ensure enemy meshes are in scene
+        for (const baseType in this.enemyInstanceManager.enemyMeshes) {
+            for (const elementType in this.enemyInstanceManager.enemyMeshes[baseType]) {
+                const mesh = this.enemyInstanceManager.enemyMeshes[baseType][elementType];
+                if (mesh && !this.scene.children.includes(mesh)) {
+                    console.log(`Re-adding enemy mesh for ${baseType}/${elementType} to scene`);
+                    this.scene.add(mesh);
+                }
+            }
+        }
+
+        console.log("Instance managers initialized");
     }
 
     createSpecialEffect(type, position) {
@@ -2829,4 +2284,518 @@ export class Renderer {
         window.location.href = `http://portal.pieter.com?${params.toString()}`;
     }
 
+    // Add these methods after createTower
+
+    // Remove a tower and release its instance
+    removeTower(towerInstance) {
+        if (!towerInstance) return;
+
+        // Release instance index
+        this.towerManager.releaseIndex(towerInstance.elementKey, towerInstance.instanceIndex);
+
+        // Hide instanced parts
+        this.towerManager.hideInstance(towerInstance.elementKey, towerInstance.instanceIndex, towerInstance.shadowIndex);
+
+        // Remove top group from scene
+        if (towerInstance.topGroup) {
+            this.scene.remove(towerInstance.topGroup);
+
+            // Dispose any geometries and materials created for this tower
+            towerInstance.topGroup.traverse(child => {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(material => material.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+
+        // Remove from instances array
+        const index = this.towerInstances.indexOf(towerInstance);
+        if (index !== -1) {
+            this.towerInstances.splice(index, 1);
+        }
+    }
+
+    // Update the position of a tower
+    updateTowerPosition(towerInstance, position) {
+        if (!towerInstance) return;
+
+        // Update positions for instanced parts
+        this.towerManager.updateBasePosition(towerInstance.elementKey, towerInstance.instanceIndex, position);
+        this.towerManager.updateFoundationPosition(towerInstance.elementKey, towerInstance.instanceIndex, position);
+
+        // Update top group position
+        if (towerInstance.topGroup) {
+            towerInstance.topGroup.position.set(position.x, 0, position.z);
+        }
+
+        // Update stored position
+        towerInstance.position.set(position.x, 0, position.z);
+    }
+
+    // Rotate tower to target an enemy
+    rotateTowerToTarget(towerInstance, targetPosition) {
+        if (!towerInstance) return;
+
+        // For instanced towers, use the instance manager
+        if (towerInstance.elementKey !== undefined &&
+            towerInstance.instanceIndex !== undefined &&
+            towerInstance.topType !== undefined) {
+
+            this.towerManager.updateTopRotation(
+                towerInstance.elementKey,
+                towerInstance.instanceIndex,
+                towerInstance.topType,
+                targetPosition,
+                towerInstance.position
+            );
+        }
+    }
+
+
+
+    // Animation loop (call this in your game loop)
+    animate(currentTime, game) {
+        if (!this.renderer || !game) return;
+
+        // Early-out if the game is paused or hidden (tab not active)
+        if (document.hidden || game.gameOver) {
+            return;
+        }
+
+        // Update game camera
+        this.updateCamera();
+
+        // Skip animation updates when FPS is very low (emergency performance mode)
+        const lowFPS = game.fpsCounter && game.fpsCounter.value < 20;
+
+        // Use shared vectors for calculations
+        const currentPos = this._tempVector1;
+        const lastPos = this._tempVector2;
+
+        // Only animate visible projectiles in camera frustum
+        const frustum = this._frustum || new THREE.Frustum();
+        this._frustum = frustum;
+        const projScreenMatrix = this._projScreenMatrix || new THREE.Matrix4();
+        this._projScreenMatrix = projScreenMatrix;
+
+        // Update frustum for visibility checks
+        this.camera.updateMatrixWorld();
+        projScreenMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+        frustum.setFromProjectionMatrix(projScreenMatrix);
+
+        // Throttle animation at low FPS
+        const animateEveryNth = lowFPS ? 3 : 1; // Only animate 1/3 of objects at very low FPS
+        let animationCounter = 0;
+
+        // Animate projectiles with culling
+        game.projectiles.forEach(projectile => {
+            if (!projectile.mesh) return;
+
+            // Skip animation based on counter for extreme low FPS scenarios
+            animationCounter++;
+            if (lowFPS && animationCounter % animateEveryNth !== 0) {
+                return;
+            }
+
+            // Only update position
+                projectile.mesh.position.copy(projectile.position);
+
+            // Skip trail animation if FPS is very low or no particle system
+            if (lowFPS || !projectile.mesh.userData.particleSystem) return;
+
+            // Skip trail animation if offscreen (outside frustum)
+            currentPos.copy(projectile.position);
+            if (!frustum.containsPoint(currentPos)) return;
+
+                // Animate projectile trail
+                    const particles = projectile.mesh.userData.particleSystem;
+                    const positions = particles.geometry.attributes.position.array;
+                    const particleAges = particles.userData.particleAges || [];
+
+            currentPos.set(
+                        projectile.position.x,
+                        projectile.position.y,
+                        projectile.position.z
+                    );
+
+                    // If this is not the first update, add current position to trail
+                    if (projectile.mesh.userData.lastPosition) {
+                lastPos.set(
+                    projectile.mesh.userData.lastPosition.x,
+                    projectile.mesh.userData.lastPosition.y,
+                    projectile.mesh.userData.lastPosition.z
+                        );
+
+                        const particleCount = positions.length / 3;
+                        for (let i = 0; i < particleCount; i++) {
+                            const i3 = i * 3;
+                            // Age particles
+                            particleAges[i] = (particleAges[i] || 0) + 1;
+
+                            // Fade out older particles
+                            if (particleAges[i] > 10) {
+                                // Reset this particle to near the projectile
+                                positions[i3] = (Math.random() - 0.5) * 0.1;
+                                positions[i3 + 1] = (Math.random() - 0.5) * 0.1;
+                                positions[i3 + 2] = (Math.random() - 0.5) * 0.1;
+                                particleAges[i] = 0;
+                            }
+                        }
+                    }
+
+                    // Update last position
+            if (!projectile.mesh.userData.lastPosition) {
+                projectile.mesh.userData.lastPosition = {};
+            }
+            projectile.mesh.userData.lastPosition.x = currentPos.x;
+            projectile.mesh.userData.lastPosition.y = currentPos.y;
+            projectile.mesh.userData.lastPosition.z = currentPos.z;
+
+                    // Update geometry
+                    particles.geometry.attributes.position.needsUpdate = true;
+        });
+
+        // Throttle enemy animations based on FPS
+        if (!lowFPS) {
+        // Animate enemies using the enemy manager
+        this.enemyManager.animateEnemies(currentTime);
+        } else {
+            // Only animate visible enemies when FPS is low
+            this.enemyManager.animateVisibleEnemies(currentTime, frustum);
+        }
+
+
+
+        // Animate map glow effects (throttle during low FPS)
+        if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer && (!lowFPS || game.frameCount % 5 === 0)) {
+            const glowLayer = game.map.mapGroup.userData.glowLayer;
+
+            // More pronounced pulsing for the ground glow
+            const pulseAmount = 0.05;
+            const pulseSpeed = 0.3; // Slightly faster pulse
+            glowLayer.material.opacity = 0.12 + pulseAmount * Math.sin(currentTime * pulseSpeed);
+
+            // Also pulse the color slightly to enhance the effect
+            const hue = 0.35 + 0.02 * Math.sin(currentTime * pulseSpeed * 0.7); // Subtle hue shift around green
+            glowLayer.material.color.setHSL(hue, 0.8, 0.6);
+        }
+
+        // Adjust any dynamic shadow parameters - only update when needed
+        if (this.mainLight && this.mainLight.shadow && this.mainLight.shadow.autoUpdate) {
+            // Keep shadows strong and crisp
+            this.mainLight.shadow.bias = -0.0001;
+
+            // Optional: adjust shadow strength dynamically
+            const shadowStrength = 0.8; // Higher values = stronger shadows (0-1)
+            if (this.mainLight.shadow.darkness !== undefined) { // Some THREE.js versions use this
+                this.mainLight.shadow.darkness = shadowStrength;
+            }
+
+            // Disable shadow auto-updates at very low FPS
+            if (lowFPS && this.mainLight.shadow.autoUpdate) {
+                this.mainLight.shadow.autoUpdate = false;
+                // Force update every 500ms instead
+                if (!this._shadowInterval) {
+                    this._shadowInterval = setInterval(() => {
+                        if (this.mainLight) {
+                            this.mainLight.shadow.needsUpdate = true;
+                        }
+                    }, 500);
+                }
+            }
+        }
+
+        // Single render pass instead of multiple passes
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    // Create the tower turret part (the rotating top part)
+    createTowerTurret(tower, elementKey) {
+        // Get material for this element
+        const material = this.materials.towerTops[elementKey] || this.materials.towerTops['neutral'];
+
+        // Base turret geometry - a simple cylinder
+        const turretGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.3, 8);
+        const turretMesh = new THREE.Mesh(turretGeometry, material);
+
+        // Create a group to hold the turret and nose
+        const turretGroup = new THREE.Group();
+        turretGroup.add(turretMesh);
+
+        // Create the "nose" part that will point at enemies
+        const noseGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.4);
+        const noseMesh = new THREE.Mesh(noseGeometry, material);
+        noseMesh.position.z = 0.2; // Position it forward
+
+        // Add nose to group
+        turretGroup.add(noseMesh);
+
+        // Store the nose for rotation
+        turretGroup.userData.nose = noseMesh;
+
+        // Add special effects based on element type
+        if (elementKey !== 'neutral') {
+            // Create glow effect for elemental towers
+            const glowGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: this.getElementColor(elementKey),
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+
+            const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+            glowMesh.position.y = 0.1;
+            turretGroup.add(glowMesh);
+        }
+
+        // Add range indicator (hidden by default)
+        const rangeGeometry = new THREE.CircleGeometry(tower.range, 32);
+        const rangeMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide
+        });
+
+        const rangeIndicator = new THREE.Mesh(rangeGeometry, rangeMaterial);
+        rangeIndicator.rotation.x = -Math.PI / 2; // Make it horizontal
+        rangeIndicator.position.y = 0.02; // Just above ground
+        rangeIndicator.visible = false; // Hidden by default
+
+        turretGroup.add(rangeIndicator);
+        turretGroup.userData.rangeIndicator = rangeIndicator;
+
+        return turretGroup;
+    }
+
+    // Helper method to get color from element type
+    getElementColor(elementKey) {
+        const colors = {
+            'fire': 0xff5500,
+            'water': 0x0088ff,
+            'earth': 0x8b4513,
+            'air': 0xccffff,
+            'shadow': 0x9932cc,
+            'neutral': 0xaaaaaa
+        };
+
+        return colors[elementKey.toLowerCase()] || colors.neutral;
+    }
+
+    // Add a new update method to be called from the game loop
+    update(deltaTime) {
+        // Update animations and effects
+        this.updateAnimations(deltaTime);
+
+        // Render the scene
+        this.render(this.game);
+    }
+
+    // Update animations for towers, particles, and effects
+    updateAnimations(deltaTime) {
+        const currentTime = performance.now() / 1000; // Convert to seconds for animation
+
+        // Update tower rotations if needed
+        if (this.game.towers) {
+            for (const tower of this.game.towers) {
+                if (tower.meshGroup) {
+                    // Apply rotation to tower top if targeting
+                    if (tower.currentTarget) {
+                        this.updateTowerRotation(tower);
+                    }
+                }
+            }
+        }
+
+        // Update particle effects if any
+        for (const particleSystem of this.particleSystems) {
+            if (particleSystem.isActive) {
+                particleSystem.update(deltaTime);
+            }
+        }
+
+        // Animate all enemies - either visible only or all, depending on performance mode
+        if (this.enemyManager) {
+            // Get camera frustum for visibility testing
+            this.frustum.setFromProjectionMatrix(
+                new THREE.Matrix4().multiplyMatrices(
+                    this.camera.projectionMatrix,
+                    this.camera.matrixWorldInverse
+                )
+            );
+            // Only animate enemies within the camera frustum
+            this.enemyManager.animateVisibleEnemies(currentTime, this.frustum);
+        }
+
+        // Update damage numbers
+        this.updateDamageNumbers(deltaTime);
+
+        // Increment frame counter
+        this._frameCount++;
+    }
+
+    // Add this new method to the Renderer class to display damage numbers
+    createDamageNumber(position, amount, damageType) {
+        // Create damage number as HTML element for better performance than THREE.js text
+        const damageEl = document.createElement('div');
+        damageEl.className = 'damage-number';
+
+        // Set the text content to the damage amount
+        damageEl.textContent = Math.floor(amount);
+
+        // Add elemental styling based on damageType
+        if (damageType) {
+            damageEl.classList.add(`damage-${damageType}`);
+
+            // Apply specific color based on damage type
+            switch(damageType) {
+                case 'fire':
+                    damageEl.style.color = '#FF5722';
+                    break;
+                case 'water':
+                    damageEl.style.color = '#2196F3';
+                    break;
+                case 'earth':
+                    damageEl.style.color = '#795548';
+                    break;
+                case 'air':
+                    damageEl.style.color = '#ECEFF1';
+                    break;
+                case 'shadow':
+                    damageEl.style.color = '#673AB7';
+                    break;
+                default:
+                    damageEl.style.color = '#FFF';
+            }
+        }
+
+        // Apply critical hit styling for large amounts
+        if (amount > 50) {
+            damageEl.classList.add('damage-critical');
+            damageEl.style.fontSize = '24px';
+        }
+
+        // Position the element in 3D space
+        const screenPosition = this.worldToScreen(position);
+        damageEl.style.left = `${screenPosition.x}px`;
+        damageEl.style.top = `${screenPosition.y}px`;
+
+        // Add to document
+        document.body.appendChild(damageEl);
+
+        // Animate and remove
+        setTimeout(() => {
+            damageEl.style.opacity = '0';
+            damageEl.style.transform = 'translateY(-50px)';
+
+            // Remove from DOM after animation
+            setTimeout(() => {
+                document.body.removeChild(damageEl);
+            }, 1000);
+        }, 10);
+    }
+
+    // Helper method to convert world position to screen position
+    worldToScreen(position) {
+        // Clone position to avoid modifying the original
+        const pos = new THREE.Vector3(position.x, position.y + 1, position.z); // Offset Y to show above enemy
+
+        // Project position to screen space
+        pos.project(this.camera);
+
+        // Convert to pixel coordinates
+        return {
+            x: (pos.x * 0.5 + 0.5) * this.renderer.domElement.clientWidth,
+            y: (-pos.y * 0.5 + 0.5) * this.renderer.domElement.clientHeight
+        };
+    }
+
+    // Update damage numbers
+    updateDamageNumbers(deltaTime) {
+        if (!this.damageNumbers) {
+            this.damageNumbers = [];
+            return;
+        }
+
+        for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
+            const damageNumber = this.damageNumbers[i];
+
+            // Update the damage number
+            if (damageNumber.update) {
+                const shouldRemove = damageNumber.update(deltaTime);
+
+                // If update returns true, remove the damage number
+                if (shouldRemove) {
+                    if (damageNumber.element) {
+                        // Remove the DOM element
+                        document.body.removeChild(damageNumber.element);
+                    }
+                    this.damageNumbers.splice(i, 1);
+                }
+            }
+        }
+    }
+
+    // Update tower rotation to face target
+    updateTowerRotation(towerInstance, targetPosition) {
+        if (!towerInstance) return;
+
+        // Use the towerManager to update top rotation
+        this.towerManager.updateTopRotation(
+            towerInstance.elementKey,
+            towerInstance.instanceIndex,
+            towerInstance.topType,
+            targetPosition,
+            towerInstance.position
+        );
+    }
+
+    // Add this method to the Renderer class
+
+    /**
+     * Rotates a tower to face a target
+     * @param {Object} towerInstance - The tower instance object
+     * @param {THREE.Vector3} targetPosition - The position to rotate toward
+     */
+    rotateTowerToTarget(towerInstance, targetPosition) {
+        if (!towerInstance) return;
+
+        // For instanced towers, use the instance manager
+        if (towerInstance.elementKey !== undefined &&
+            towerInstance.instanceIndex !== undefined &&
+            towerInstance.topType !== undefined) {
+
+            this.towerManager.updateTopRotation(
+                towerInstance.elementKey,
+                towerInstance.instanceIndex,
+                towerInstance.topType,
+                targetPosition,
+                towerInstance.position
+            );
+        }
+        // For legacy non-instanced towers with top groups
+        else if (towerInstance.topGroup) {
+            // Calculate direction to target
+            const direction = new THREE.Vector3()
+                .subVectors(targetPosition, towerInstance.position)
+                .normalize();
+
+            // Calculate angle in XZ plane
+            const angle = Math.atan2(direction.x, direction.z);
+
+            // Apply rotation to the nose part
+            if (towerInstance.topGroup.userData.nose) {
+                towerInstance.topGroup.userData.nose.rotation.y = angle;
+            }
+        }
+    }
 }
