@@ -95,9 +95,9 @@ export class Game {
             { enemyHealth: 1.0, enemySpeed: 1.0, enemyCount: 15, goldMultiplier: 1.0, spawnBoss: false, batchSpawning: false },  // Wave 1
             { enemyHealth: 1.2, enemySpeed: 1.0, enemyCount: 30, goldMultiplier: 1.2, spawnBoss: false, batchSpawning: false },  // Wave 2
             { enemyHealth: 1.75, enemySpeed: 1.25, enemyCount: 50, goldMultiplier: 1.4, spawnBoss: false, batchSpawning: true },   // Wave 3
-            { enemyHealth: 4.5, enemySpeed: 1.4, enemyCount: 70, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 4 - Much higher health, more enemies
-            { enemyHealth: 5.0, enemySpeed: 1.4, enemyCount: 90, goldMultiplier: 1.7, spawnBoss: true, batchSpawning: true },    // Wave 5 - Significantly increased health and count
-            { enemyHealth: 5.5, enemySpeed: 1.5, enemyCount: 110, goldMultiplier: 1.8, spawnBoss: true, batchSpawning: true }     // Wave 6 - Massive wave with very tough enemies
+            { enemyHealth: 4.5, enemySpeed: 1.4, enemyCount: 70, goldMultiplier: 1.5, spawnBoss: true, batchSpawning: true },    // Wave 4 - Much higher health, more enemies
+            { enemyHealth: 4.5, enemySpeed: 1.4, enemyCount: 90, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true },    // Wave 5 - Significantly increased health and count
+            { enemyHealth: 5.0, enemySpeed: 1.4, enemyCount: 110, goldMultiplier: 1.6, spawnBoss: true, batchSpawning: true }     // Wave 6 - Massive wave with very tough enemies
         ];
 
         // Game timing
@@ -775,8 +775,8 @@ export class Game {
                 const originalSpeedMultiplier = this.difficultySettings.enemySpeedMultiplier;
 
                 // Apply stronger bonuses
-                this.difficultySettings.enemyHealthMultiplier *= 1.5; // 50% more health
-                this.difficultySettings.enemySpeedMultiplier *= 1.2; // 20% more speed
+                this.difficultySettings.enemyHealthMultiplier *= 1.33; // 33% more health
+                this.difficultySettings.enemySpeedMultiplier *= 1.15; // 15% more speed
 
                 // Status log removed
 
