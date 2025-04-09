@@ -239,14 +239,10 @@ export class Tower {
             }
         }
 
-        // Always update nose rotation if an enemy is in range, regardless of fire state
-        if (this.towerInstance && this.towerInstance.topGroup &&
-            this.towerInstance.topGroup.userData.nose) {
-            // Find the closest enemy in range
-            const target = this.game.findClosestEnemyInRange(this.position, this.range);
-            if (target) {
-                this.rotateTowardTarget(target);
-            }
+        // Always check for targets and rotate toward them if there are enemies in range
+        const target = this.game.findClosestEnemyInRange(this.position, this.range);
+        if (target && this.towerInstance) {
+            this.rotateTowardTarget(target);
         }
     }
 

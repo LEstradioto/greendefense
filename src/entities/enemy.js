@@ -386,14 +386,16 @@ export class Enemy {
                     this.reachedEnd = true;
 
                     // Hide the enemy by moving it far away - not just below ground
-                    this.position.y = -100;
-                    this.position.x = 10000; // Move far away horizontally too
-                    this.position.z = 10000;
+                    this.position.y = -9999;
+                    this.position.x = 9999; // Move far away horizontally too
+                    this.position.z = 9999;
 
                     // Force update the renderer position immediately
                     if (this.enemyInstance) {
+                        // Update the instance object's position
                         this.enemyInstance.position.set(this.position.x, this.position.y, this.position.z);
-                        // Update the actual rendered position in the instanced mesh
+
+                        // Update the rendered position
                         if (this.enemyInstance.baseType && this.enemyInstance.elementType &&
                             this.enemyInstance.instanceIndex !== undefined) {
                             this.game.renderer.enemyManager.updateEnemyPosition(
@@ -403,17 +405,39 @@ export class Enemy {
                                 this.position
                             );
                         }
-                        // Hide any effects too
+
+                        // Explicitly remove all effect meshes
                         if (this.enemyInstance.effectMeshes) {
-                            for (const effect in this.enemyInstance.effectMeshes) {
-                                if (this.enemyInstance.effectMeshes[effect]) {
-                                    this.enemyInstance.effectMeshes[effect].visible = false;
+                            for (const effectType in this.enemyInstance.effectMeshes) {
+                                if (this.enemyInstance.effectMeshes[effectType]) {
+                                    // Move effect far away
+                                    this.enemyInstance.effectMeshes[effectType].position.set(9999, -9999, 9999);
+
+                                    // Ensure it's not visible
+                                    this.enemyInstance.effectMeshes[effectType].visible = false;
+
+                                    // For particles, also clear positions
+                                    if (effectType === 'particles' &&
+                                        this.enemyInstance.effectMeshes[effectType].geometry &&
+                                        this.enemyInstance.effectMeshes[effectType].geometry.attributes &&
+                                        this.enemyInstance.effectMeshes[effectType].geometry.attributes.position) {
+
+                                        const positions = this.enemyInstance.effectMeshes[effectType].geometry.attributes.position.array;
+                                        for (let i = 0; i < positions.length; i += 3) {
+                                            positions[i] = 9999;
+                                            positions[i+1] = -9999;
+                                            positions[i+2] = 9999;
+                                        }
+                                        this.enemyInstance.effectMeshes[effectType].geometry.attributes.position.needsUpdate = true;
+                                    }
                                 }
                             }
                         }
+
                         // Hide health bar
                         if (this.enemyInstance.healthBar && this.enemyInstance.healthBar.group) {
                             this.enemyInstance.healthBar.group.visible = false;
+                            this.enemyInstance.healthBar.group.position.set(9999, -9999, 9999);
                         }
                     }
                 } else {

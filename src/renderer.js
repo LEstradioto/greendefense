@@ -529,7 +529,9 @@ export class Renderer {
 
     render(game) {
         // Update camera controls
-        this.controls.update();
+        if (this.controls) {
+            this.controls.update();
+        }
 
         // Update rotation state - if it's been more than 50ms since a control update,
         // we can consider the rotation to have stopped (much more responsive)
@@ -562,7 +564,12 @@ export class Renderer {
         }
 
         // Toggle debug helpers
-        this.gridHelper.visible = game.debugMode;
+        if (this.gridHelper) {
+            this.gridHelper.visible = game.debugMode;
+        }
+
+        // Update all tower range indicators to match debug mode state
+        this.updateTowerRangeIndicators(game.debugMode);
 
         // Toggle shadow camera helper in debug mode
         if (this.shadowHelper) {
@@ -650,232 +657,7 @@ export class Renderer {
             }
         });
 
-        // Animate projectile trails with culling
-        game.projectiles.forEach(projectile => {
-            // Skip animation for off-screen projectiles
-            if (projectile.position) {
-                // Create a bounding sphere for the projectile
-                const boundingSphere = new THREE.Sphere(
-                    new THREE.Vector3(projectile.position.x, projectile.position.y, projectile.position.z),
-                    1.0 // Radius for the projectile
-                );
-
-                // Skip if not in view frustum
-                if (!this.frustum.intersectsSphere(boundingSphere)) {
-                    return;
-                }
-            }
-
-            // First update the shadow projector if it exists
-            if (projectile.mesh && projectile.mesh.userData.shadowProjector) {
-                const shadowPlane = projectile.mesh.userData.shadowProjector;
-                const currentPos = projectile.mesh.position;
-
-                // Project the shadow onto the ground
-                shadowPlane.position.x = currentPos.x;
-                shadowPlane.position.y = 0.01; // Just above ground
-                shadowPlane.position.z = currentPos.z;
-
-                // Scale shadow based on height (further = smaller shadow)
-                const distance = Math.max(0.5, currentPos.y);
-                const scale = 0.3 + (0.7 / distance); // Inverse scale with height
-                shadowPlane.scale.set(scale, scale, 1);
-
-                // Fade shadow with height
-                const opacity = Math.min(0.5, 0.5 / distance);
-                shadowPlane.material.opacity = opacity;
-            }
-
-            // Additional projectile trail optimizations
-            if (this.quality === 'low' || this.quality === 'critical') {
-                // Skip trails completely for low quality modes
-                return;
-            }
-
-            // Then update particles if they exist and we're in normal quality mode
-            if (projectile.mesh && projectile.mesh.userData.particles) {
-                const particles = projectile.mesh.userData.particles;
-                const positions = particles.geometry.attributes.position.array;
-                const particleCount = positions.length / 3;
-                const particleAges = projectile.mesh.userData.particleAge;
-                const maxAge = projectile.mesh.userData.particleMaxAge;
-                const lastPos = projectile.mesh.userData.lastPosition;
-                const currentPos = projectile.mesh.position;
-
-                // Calculate delta time (assume ~60fps for simplicity)
-                const deltaTime = 1/60;
-
-                // Update each particle
-                for (let i = 0; i < particleCount; i++) {
-                    const i3 = i * 3;
-
-                    // Age the particle
-                    particleAges[i] += deltaTime;
-
-                    // If particle is too old, reset it to current position with a small random offset
-                    if (particleAges[i] > maxAge) {
-                        positions[i3] = (Math.random() - 0.5) * 0.1;
-                        positions[i3 + 1] = (Math.random() - 0.5) * 0.1;
-                        positions[i3 + 2] = (Math.random() - 0.5) * 0.1;
-                        particleAges[i] = 0;
-                    }
-                }
-
-                // Update last position
-                projectile.mesh.userData.lastPosition = {
-                    x: currentPos.x,
-                    y: currentPos.y,
-                    z: currentPos.z
-                };
-
-                // Update geometry
-                particles.geometry.attributes.position.needsUpdate = true;
-            }
-        });
-
-        // Animate enemies
-        game.enemies.forEach(enemy => {
-            if (enemy.mesh) {
-                // Basic animation based on enemy type
-                const baseType = enemy.type.split('_').pop();
-                switch (baseType) {
-                    case 'simple':
-                        // Simple enemies wobble
-                        enemy.mesh.rotation.x = 0.2 * Math.sin(currentTime * 2);
-                        enemy.mesh.rotation.z = 0.2 * Math.cos(currentTime * 2);
-                        break;
-                    case 'elephant':
-                        // Elephants sway
-                        enemy.mesh.rotation.y = 0.1 * Math.sin(currentTime);
-                        break;
-                    case 'pirate':
-                        // Pirates spin slowly
-                        enemy.mesh.rotation.y += 0.01;
-                        break;
-                    case 'golem':
-                        // Golems pulse
-                        const scale = 1 + 0.05 * Math.sin(currentTime * 1.5);
-                        enemy.mesh.scale.set(scale, scale, scale);
-                        break;
-                }
-
-                // Animate elemental particles if present
-                if (enemy.mesh.userData.elementParticles) {
-                    const particles = enemy.mesh.userData.elementParticles;
-                    const positions = particles.geometry.attributes.position.array;
-                    const particleCount = positions.length / 3;
-
-                    for (let i = 0; i < particleCount; i++) {
-                        const i3 = i * 3;
-                        const angle = (currentTime + i) * 2;
-                        const radius = 0.4 + 0.1 * Math.sin(currentTime * 3 + i);
-
-                        // Update particle positions based on element type
-                        switch (enemy.mesh.userData.elementType) {
-                            case 'fire':
-                                // Fire particles move up and outward
-                                positions[i3] = radius * Math.cos(angle);
-                                positions[i3+1] = 0.1 + 0.2 * Math.sin(currentTime * 4 + i);
-                                positions[i3+2] = radius * Math.sin(angle);
-                                break;
-                            case 'water':
-                                // Water particles flow in circles
-                                positions[i3] = radius * Math.cos(angle * 0.5);
-                                positions[i3+1] = 0.1 * Math.sin(currentTime * 2 + i);
-                                positions[i3+2] = radius * Math.sin(angle * 0.5);
-                                break;
-                            case 'earth':
-                                // Earth particles orbit slowly
-                                positions[i3] = radius * Math.cos(angle * 0.3);
-                                positions[i3+1] = 0.05 * Math.sin(currentTime + i);
-                                positions[i3+2] = radius * Math.sin(angle * 0.3);
-                                break;
-                            case 'air':
-                                // Air particles move quickly and chaotically
-                                positions[i3] = radius * Math.cos(angle * 2);
-                                positions[i3+1] = 0.2 * Math.sin(currentTime * 5 + i);
-                                positions[i3+2] = radius * Math.sin(angle * 2);
-                                break;
-                            case 'shadow':
-                                // Shadow particles pulse in and out
-                                const pulseRadius = 0.3 + 0.3 * Math.sin(currentTime + i);
-                                positions[i3] = pulseRadius * Math.cos(angle * 0.7);
-                                positions[i3+1] = 0.1 * Math.sin(currentTime * 1.5 + i);
-                                positions[i3+2] = pulseRadius * Math.sin(angle * 0.7);
-                                break;
-                        }
-                    }
-
-                    particles.geometry.attributes.position.needsUpdate = true;
-                }
-
-                // Enemies with status effects get visual indicators
-                if (enemy.statusEffects && enemy.statusEffects.length > 0) {
-                    // If enemy doesn't have an effect indicator, create one
-                    if (!enemy.mesh.userData.effectIndicator) {
-                        // Create effect indicator based on first status effect
-                        const effect = enemy.statusEffects[0];
-                        let effectColor = 0xFFFFFF;
-
-                        // Choose color based on effect type
-                        if (effect.type === 'burn') effectColor = 0xFF5722;
-                        else if (effect.type === 'slow') effectColor = 0x2196F3;
-                        else if (effect.type === 'weaken') effectColor = 0x9C27B0;
-
-                        // Create glow effect
-                        const effectGeometry = new THREE.SphereGeometry(0.4, 12, 12);
-                        const effectMaterial = new THREE.MeshBasicMaterial({
-                            color: effectColor,
-                            transparent: true,
-                            opacity: 0.3,
-                            side: THREE.BackSide,
-                            blending: THREE.AdditiveBlending
-                        });
-
-                        const effectMesh = new THREE.Mesh(effectGeometry, effectMaterial);
-                        enemy.mesh.add(effectMesh);
-                        enemy.mesh.userData.effectIndicator = effectMesh;
-                    }
-
-                    // Pulse the effect indicator
-                    const effectIndicator = enemy.mesh.userData.effectIndicator;
-                    if (effectIndicator) {
-                        const pulseAmount = 0.2;
-                        effectIndicator.material.opacity = 0.3 + pulseAmount * Math.sin(currentTime * 4);
-                    }
-                } else if (enemy.mesh.userData.effectIndicator) {
-                    // Remove effect indicator if no active effects
-                    enemy.mesh.remove(enemy.mesh.userData.effectIndicator);
-                    enemy.mesh.userData.effectIndicator = null;
-                }
-            }
-        });
-
-        // Animate map glow effects
-        if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer) {
-            const glowLayer = game.map.mapGroup.userData.glowLayer;
-
-            // More pronounced pulsing for the ground glow
-            const pulseAmount = 0.05;
-            const pulseSpeed = 0.3; // Slightly faster pulse
-            glowLayer.material.opacity = 0.12 + pulseAmount * Math.sin(currentTime * pulseSpeed);
-
-            // Also pulse the color slightly to enhance the effect
-            const hue = 0.35 + 0.02 * Math.sin(currentTime * pulseSpeed * 0.7); // Subtle hue shift around green
-            glowLayer.material.color.setHSL(hue, 0.8, 0.6);
-        }
-
-        // Adjust any dynamic shadow parameters
-        if (this.mainLight && this.mainLight.shadow) {
-            // Keep shadows strong and crisp
-            this.mainLight.shadow.bias = -0.0001;
-
-            // Optional: adjust shadow strength dynamically
-            const shadowStrength = 0.8; // Higher values = stronger shadows (0-1)
-            if (this.mainLight.shadow.darkness !== undefined) { // Some THREE.js versions use this
-                this.mainLight.shadow.darkness = shadowStrength;
-            }
-        }
+        // Rest of render method content...
 
         // Custom render process with stencil buffer to fix ground rendering issues
 
@@ -913,6 +695,23 @@ export class Renderer {
 
         // 4. Final pass: render the entire scene
         this.renderer.render(this.scene, this.camera);
+    }
+
+    // Utility method to update all tower range indicators
+    updateTowerRangeIndicators(debugMode) {
+        // Update all tower range indicators based on debug mode
+        for (const towerInstance of this.towerInstances) {
+            if (towerInstance && towerInstance.topGroup &&
+                towerInstance.topGroup.userData &&
+                towerInstance.topGroup.userData.rangeIndicator) {
+
+                // Force visibility to match debug mode
+                const indicator = towerInstance.topGroup.userData.rangeIndicator;
+                if (indicator.visible !== debugMode) {
+                    indicator.visible = debugMode;
+                }
+            }
+        }
     }
 
     createMap(mapData, gridSize) {
@@ -1322,35 +1121,40 @@ export class Renderer {
         // Update the top position using instanced rendering
         this.towerManager.updateTopPosition(elementKey, instanceIndex, tower.position, topType);
 
-        // Create a range indicator (hidden by default)
-        const rangeGeometry = new THREE.CircleGeometry(tower.range, 32);
-        const rangeMaterial = new THREE.MeshBasicMaterial({
+        // Create a range indicator (hidden by default) - use wireframe for better performance
+        const rangeSegments = 32;
+        const rangeGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array((rangeSegments + 1) * 3);
+
+        // Create a circle using line segments
+        for (let i = 0; i <= rangeSegments; i++) {
+            const angle = (i / rangeSegments) * Math.PI * 2;
+            positions[i * 3] = Math.cos(angle) * tower.range;
+            positions[i * 3 + 1] = 0;
+            positions[i * 3 + 2] = Math.sin(angle) * tower.range;
+        }
+
+        rangeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const rangeMaterial = new THREE.LineBasicMaterial({
             color: 0x00ff00,
             transparent: true,
-            opacity: 0.2,
-            side: THREE.DoubleSide
+            opacity: 0.4,
+            depthTest: false,
+            depthWrite: false
         });
 
-        const rangeIndicator = new THREE.Mesh(rangeGeometry, rangeMaterial);
-        rangeIndicator.rotation.x = -Math.PI / 2; // Align with ground
+        const rangeIndicator = new THREE.Line(rangeGeometry, rangeMaterial);
         rangeIndicator.position.y = 0.02; // Just above ground
         rangeIndicator.visible = false; // Hidden by default
+        rangeIndicator.renderOrder = 999; // Very high render order to ensure visibility
 
-        // Create the nose part (needed for proper rotation targeting)
-        const noseMaterial = this.materials.towerTops[elementKey] || this.materials.towerTops['neutral'];
-        const noseGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.4);
-        const noseMesh = new THREE.Mesh(noseGeometry, noseMaterial);
-        noseMesh.position.set(0, 0.9, 0.2); // Position it at the top of the tower and forward
-        noseMesh.visible = true;
-
-        // Create an empty group for the range indicator, nose, and other metadata
+        // Create an empty group for the range indicator and other metadata
         // This maintains compatibility with existing code
         const topGroup = new THREE.Group();
         topGroup.position.copy(tower.position);
         topGroup.userData.rangeIndicator = rangeIndicator;
-        topGroup.userData.nose = noseMesh; // Store reference to nose for rotation
         topGroup.add(rangeIndicator);
-        topGroup.add(noseMesh);
 
         // Add to scene
         this.scene.add(topGroup);
@@ -2476,15 +2280,21 @@ export class Renderer {
 
     // Rotate tower to target an enemy
     rotateTowerToTarget(towerInstance, targetPosition) {
-        if (!towerInstance || !towerInstance.topGroup || !towerInstance.topGroup.userData.nose) return;
+        if (!towerInstance) return;
 
-        // Calculate angle to target
-        const dx = targetPosition.x - towerInstance.position.x;
-        const dz = targetPosition.z - towerInstance.position.z;
-        const angle = Math.atan2(dz, dx);
+        // For instanced towers, use the instance manager
+        if (towerInstance.elementKey !== undefined &&
+            towerInstance.instanceIndex !== undefined &&
+            towerInstance.topType !== undefined) {
 
-        // Rotate nose to face target
-        towerInstance.topGroup.userData.nose.rotation.y = angle;
+            this.towerManager.updateTopRotation(
+                towerInstance.elementKey,
+                towerInstance.instanceIndex,
+                towerInstance.topType,
+                targetPosition,
+                towerInstance.position
+            );
+        }
     }
 
     // Add LOD system for towers

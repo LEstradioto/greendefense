@@ -321,6 +321,10 @@ export class EnemyInstanceManager {
 
         const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
         glowMesh.position.copy(enemyInstance.position);
+
+        // Start invisible until first properly positioned update
+        glowMesh.visible = false;
+
         this.scene.add(glowMesh);
 
         // Store in enemy instance
@@ -354,14 +358,85 @@ export class EnemyInstanceManager {
 
             const particles = new THREE.Points(particleGeometry, particleMaterial);
             particles.position.copy(enemyInstance.position);
+
+            // Start invisible until first properly positioned update
+            particles.visible = false;
+
             this.scene.add(particles);
 
             // Store for animation
             enemyInstance.effectMeshes.particles = particles;
+
+            // Track if effects have been properly initialized
+            enemyInstance.effectsInitialized = false;
         }
     }
 
     updateEnemyEffects(enemyInstance, currentTime) {
+        // Skip effects for enemies that have reached the end
+        if (enemyInstance.enemy && enemyInstance.enemy.reachedEnd) {
+            // Ensure all effects are hidden for enemies that reached the end
+            if (enemyInstance.effectMeshes) {
+                for (const effectType in enemyInstance.effectMeshes) {
+                    if (enemyInstance.effectMeshes[effectType]) {
+                        enemyInstance.effectMeshes[effectType].visible = false;
+
+                        // Move far away from scene
+                        enemyInstance.effectMeshes[effectType].position.set(9999, -9999, 9999);
+
+                        // For particles, also reset positions
+                        if (effectType === 'particles' &&
+                            enemyInstance.effectMeshes[effectType].geometry &&
+                            enemyInstance.effectMeshes[effectType].geometry.attributes &&
+                            enemyInstance.effectMeshes[effectType].geometry.attributes.position) {
+
+                            const positions = enemyInstance.effectMeshes[effectType].geometry.attributes.position.array;
+                            for (let i = 0; i < positions.length; i += 3) {
+                                positions[i] = 9999;
+                                positions[i+1] = -9999;
+                                positions[i+2] = 9999;
+                            }
+                            enemyInstance.effectMeshes[effectType].geometry.attributes.position.needsUpdate = true;
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        // Check if the enemy has a valid position - don't show effects if not
+        // Positions around 0,0 on first spawn might not be valid - check for enemy having a path
+        const hasValidPosition = enemyInstance.enemy &&
+                                 enemyInstance.enemy.pathWaypoints &&
+                                 enemyInstance.enemy.pathWaypoints.length > 0;
+
+        // Skip if enemy doesn't have a valid position yet
+        if (!hasValidPosition) {
+            // Make sure all effects are hidden
+            if (enemyInstance.effectMeshes) {
+                for (const effectType in enemyInstance.effectMeshes) {
+                    if (enemyInstance.effectMeshes[effectType]) {
+                        enemyInstance.effectMeshes[effectType].visible = false;
+                    }
+                }
+            }
+            return;
+        }
+
+        // Enemy has valid position, we can show and update effects
+
+        // If first time with valid position, mark as initialized and make visible
+        if (!enemyInstance.effectsInitialized) {
+            if (enemyInstance.effectMeshes) {
+                for (const effectType in enemyInstance.effectMeshes) {
+                    if (enemyInstance.effectMeshes[effectType]) {
+                        enemyInstance.effectMeshes[effectType].visible = true;
+                    }
+                }
+            }
+            enemyInstance.effectsInitialized = true;
+        }
+
         // Update elemental effects
         if (enemyInstance.effectMeshes.glow) {
             // Update glow position
@@ -590,6 +665,11 @@ export class EnemyInstanceManager {
 
     // Helper method to animate a single enemy
     _animateSingleEnemy(enemyInstance, currentTime) {
+        // Skip animation for enemies that have reached the end
+        if (enemyInstance.enemy && enemyInstance.enemy.reachedEnd) {
+            return;
+        }
+
         // Initialize needsUpdate tracking for this type/element if needed
         if (!this._animatedTypes[enemyInstance.baseType]) {
             this._animatedTypes[enemyInstance.baseType] = {};
