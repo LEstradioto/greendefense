@@ -18,18 +18,9 @@ export class Renderer {
         // For performance optimizations
         this.distanceVector = new THREE.Vector3(); // Reusable vector for distance calculations
 
-        // Shared matrices for animation to reduce object creation
-        this._tempMatrix1 = new THREE.Matrix4();
-        this._tempMatrix2 = new THREE.Matrix4();
-        this._tempMatrix3 = new THREE.Matrix4();
-        this._rotationMatrix = new THREE.Matrix4();
-        this._scaleMatrix = new THREE.Matrix4();
-        this._positionMatrix = new THREE.Matrix4();
-
         // Shared vectors
         this._tempVector1 = new THREE.Vector3();
         this._tempVector2 = new THREE.Vector3();
-        this._tempVector3 = new THREE.Vector3();
 
         // Set up renderer with enhanced quality settings
         // Enable stencil buffer to prevent unwanted rendering artifacts with ground plane
@@ -425,108 +416,6 @@ export class Renderer {
         return this.distanceVector.length();
     }
 
-    // Set the quality level of the renderer
-    setQualityLevel(level) {
-        // Convert numeric levels if needed (for backward compatibility)
-        let qualityLevel = level;
-        if (typeof level === 'number') {
-            switch(level) {
-                case 0: qualityLevel = 'critical'; break;
-                case 1: qualityLevel = 'low'; break;
-                default: qualityLevel = 'normal'; break;
-            }
-        }
-
-        // Store current quality level
-        this.quality = qualityLevel;
-
-        // Adjust renderer settings based on quality level
-        switch(qualityLevel) {
-            case 'critical':
-                // Critical performance mode - minimize everything
-                this.renderer.setPixelRatio(window.devicePixelRatio * 0.5);
-                this.renderer.shadowMap.enabled = false;
-
-                // Disable post-processing if any
-                if (this.composer) {
-                    this.composer.enabled = false;
-                }
-
-                // Switch all materials to basic materials to save performance
-                this.scene.traverse(object => {
-                    if (object.isMesh && object.material) {
-                        // Skip if already basic or has userData flag
-                        if (object.userData.preserveMaterial ||
-                            object.material instanceof THREE.MeshBasicMaterial) {
-                            return;
-                        }
-
-                        // Store original material for later restoration
-                        if (!object.userData.originalMaterial) {
-                            object.userData.originalMaterial = object.material;
-                        }
-
-                        // Create basic material that approximates the original
-                        const color = object.material.color ?
-                            object.material.color.clone() :
-                            new THREE.Color(0xCCCCCC);
-
-                        object.material = new THREE.MeshBasicMaterial({
-                            color: color,
-                            transparent: object.material.transparent,
-                            opacity: object.material.opacity,
-                            wireframe: false,
-                            side: object.material.side
-                        });
-                    }
-                });
-                break;
-
-            case 'low':
-                // Low quality mode - reduce settings
-                this.renderer.setPixelRatio(window.devicePixelRatio * 0.75);
-                this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.BasicShadowMap;
-
-                // Simplified shadows and limited effects
-                if (this.composer) {
-                    this.composer.enabled = true;
-                    // Disable expensive effects if any
-                }
-
-                // Restore materials if coming from critical mode
-                this.scene.traverse(object => {
-                    if (object.isMesh && object.userData.originalMaterial &&
-                        !(object.material instanceof THREE.MeshStandardMaterial)) {
-                        object.material = object.userData.originalMaterial;
-                    }
-                });
-                break;
-
-            case 'normal':
-            default:
-                // Normal quality - full features
-            this.renderer.setPixelRatio(window.devicePixelRatio);
-            this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-                // Enable post-processing if any
-                if (this.composer) {
-                    this.composer.enabled = true;
-                }
-
-                // Restore all original materials
-                this.scene.traverse(object => {
-                    if (object.isMesh && object.userData.originalMaterial) {
-                        object.material = object.userData.originalMaterial;
-                        // No need to keep reference anymore
-                        delete object.userData.originalMaterial;
-                    }
-                });
-                break;
-        }
-    }
-
     render(game) {
         // Update camera controls
         if (this.controls) {
@@ -591,8 +480,6 @@ export class Renderer {
             this.frustum.setFromProjectionMatrix(projScreenMatrix);
         }
 
-        // Update LOD for towers based on camera distance
-        this.updateTowerLOD();
 
         // Animate tower glows and particles with frustum culling
         this.towerInstances.forEach(towerInstance => {
@@ -2297,43 +2184,7 @@ export class Renderer {
         }
     }
 
-    // Add LOD system for towers
-    updateTowerLOD() {
-        const cameraPosition = this.camera.position;
 
-        this.towerInstances.forEach(towerInstance => {
-            if (!towerInstance.topGroup) return;
-
-            // Calculate distance to camera
-            const distanceToCamera = this.getDistanceToCamera(towerInstance.position);
-
-            // Apply different LOD levels based on distance
-            if (distanceToCamera > 50) {
-                // Very far away - simplify drastically
-                // Hide particles and glow effects
-                towerInstance.topGroup.traverse(child => {
-                    if (child.isPoints || (child.isMesh && child.material && child.material.side === THREE.BackSide)) {
-                        child.visible = false;
-                    }
-                });
-            } else if (distanceToCamera > 30) {
-                // Medium distance - show only basic effects
-                towerInstance.topGroup.traverse(child => {
-                    // Hide particles but keep glow
-                    if (child.isPoints) {
-                        child.visible = false;
-                    } else if (child.isMesh && child.material && child.material.side === THREE.BackSide) {
-                        child.visible = true;
-                    }
-                });
-            } else {
-                // Close to camera - show everything
-                towerInstance.topGroup.traverse(child => {
-                    child.visible = true;
-                });
-            }
-        });
-    }
 
     // Animation loop (call this in your game loop)
     animate(currentTime, game) {
@@ -2446,10 +2297,7 @@ export class Renderer {
             this.enemyManager.animateVisibleEnemies(currentTime, frustum);
         }
 
-        // Update LOD for enemies based on camera distance - only do this every few frames at low FPS
-        if (!lowFPS || (game.frameCount % 10 === 0)) {
-        this.enemyManager.updateLOD(this.camera.position);
-        }
+
 
         // Animate map glow effects (throttle during low FPS)
         if (game.map && game.map.mapGroup && game.map.mapGroup.userData.glowLayer && (!lowFPS || game.frameCount % 5 === 0)) {
@@ -2570,23 +2418,6 @@ export class Renderer {
 
     // Add a new update method to be called from the game loop
     update(deltaTime) {
-        // Quality level setting based on performance mode
-        if (this.game.performanceMode === 'critical') {
-            this.setQualityLevel(0); // Low quality
-        } else if (this.game.performanceMode === 'low') {
-            this.setQualityLevel(1); // Medium quality
-        } else {
-            this.setQualityLevel(2); // Full quality
-        }
-
-        // Adaptive LOD updates - more frequent at higher framerate
-        if (this.game.fpsAverage > 45 || this._frameCount % 2 === 0) {
-            // Update LOD for all entities at higher framerates or every other frame
-            if (this.enemyManager) {
-                this.enemyManager.updateLOD(this.camera.position);
-            }
-        }
-
         // Update animations and effects
         this.updateAnimations(deltaTime);
 
@@ -2619,24 +2450,15 @@ export class Renderer {
 
         // Animate all enemies - either visible only or all, depending on performance mode
         if (this.enemyManager) {
-            if (this.game.performanceMode === 'normal') {
-                // Get camera frustum for visibility testing
-                this.frustum.setFromProjectionMatrix(
-                    new THREE.Matrix4().multiplyMatrices(
-                        this.camera.projectionMatrix,
-                        this.camera.matrixWorldInverse
-                    )
-                );
-                // Only animate enemies within the camera frustum
-                this.enemyManager.animateVisibleEnemies(currentTime, this.frustum);
-            } else {
-                // In low/critical performance mode, just animate a subset or none
-                const animateNone = this.game.performanceMode === 'critical';
-                if (!animateNone && this._frameCount % 2 === 0) {
-                    // In low performance mode, animate every other frame
-                    this.enemyManager.animateEnemies(currentTime);
-                }
-            }
+            // Get camera frustum for visibility testing
+            this.frustum.setFromProjectionMatrix(
+                new THREE.Matrix4().multiplyMatrices(
+                    this.camera.projectionMatrix,
+                    this.camera.matrixWorldInverse
+                )
+            );
+            // Only animate enemies within the camera frustum
+            this.enemyManager.animateVisibleEnemies(currentTime, this.frustum);
         }
 
         // Update damage numbers

@@ -838,58 +838,6 @@ export class EnemyInstanceManager {
         this._applyMatrixUpdates();
     }
 
-    // Update LOD for enemies based on distance
-    updateLOD(cameraPosition) {
-        for (const enemyInstance of this.enemyInstances) {
-            // Calculate distance to camera
-            const distance = new THREE.Vector3()
-                .copy(enemyInstance.position)
-                .sub(cameraPosition)
-                .length();
-
-            // Apply LOD based on distance
-            if (distance > 50) {
-                // Very far - hide effects
-                for (const effectType in enemyInstance.effectMeshes) {
-                    if (enemyInstance.effectMeshes[effectType]) {
-                        enemyInstance.effectMeshes[effectType].visible = false;
-                    }
-                }
-
-                // Hide health bar for very distant enemies
-                if (enemyInstance.healthBar && enemyInstance.healthBar.group) {
-                    enemyInstance.healthBar.group.visible = false;
-                }
-            } else if (distance > 30) {
-                // Medium distance - show only main effects
-                if (enemyInstance.effectMeshes.glow) {
-                    enemyInstance.effectMeshes.glow.visible = true;
-                }
-
-                if (enemyInstance.effectMeshes.particles) {
-                    enemyInstance.effectMeshes.particles.visible = false;
-                }
-
-                // Show health bar for medium distant enemies
-                if (enemyInstance.healthBar && enemyInstance.healthBar.group) {
-                    enemyInstance.healthBar.group.visible = true;
-                }
-            } else {
-                // Close - show everything
-                for (const effectType in enemyInstance.effectMeshes) {
-                    if (enemyInstance.effectMeshes[effectType]) {
-                        enemyInstance.effectMeshes[effectType].visible = true;
-                    }
-                }
-
-                // Show health bar for close enemies
-                if (enemyInstance.healthBar && enemyInstance.healthBar.group) {
-                    enemyInstance.healthBar.group.visible = true;
-                }
-            }
-        }
-    }
-
     // Cleanup resources
     dispose() {
         // Remove all enemy instances

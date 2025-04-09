@@ -27,13 +27,6 @@ export class Game {
         this.animations = [];
         this.animationIdCounter = 0;
 
-        // Performance tracking
-        this.frameCount = 0;
-        this.criticalPerformance = false;
-        this.performanceMode = 'normal'; // 'normal', 'low', 'critical'
-        this.performanceCheckInterval = 60; // Check every ~1s at 60fps
-        this.lastPerformanceUpdate = 0;
-
         // Maximum number of entities to keep performance stable
         this.maxActiveProjectiles = 100; // Reduced limit to prevent visual clutter
         this.maxActiveEnemies = 150;
@@ -242,14 +235,8 @@ export class Game {
             return;
         }
 
-        // Update frame tracking
-        this.frameCount++;
-
         // Update FPS counter
         this.updateFpsCounter(currentTime);
-
-        // Check performance and adjust settings if needed
-        this.checkPerformance();
 
         // Calculate time delta
         this.deltaTime = (currentTime - this.lastFrameTime) / 1000; // convert to seconds
@@ -434,11 +421,6 @@ export class Game {
                     }
                     // Status log removed
                 }
-
-                // Tell renderer to use lower quality settings
-                if (this.renderer.setQualityLevel) {
-                    this.renderer.setQualityLevel('low');
-                }
             }
         } else if (this.fpsCounter.value > 45 && this.lowQualityMode) {
             // Return to normal quality when FPS recovers
@@ -446,11 +428,6 @@ export class Game {
             this.lowQualityMode = false;
             this.maxParticles = 200;
             this.enemyUpdateSkipRate = 3; // Reset to default (i % 3)
-
-            // Tell renderer to use normal quality settings
-            if (this.renderer.setQualityLevel) {
-                this.renderer.setQualityLevel('normal');
-            }
         }
 
         // Render the game
@@ -2650,12 +2627,6 @@ export class Game {
         // Skip if no renderer or no position
         if (!this.renderer || !position) return;
 
-        // Skip effect if we're in low performance mode
-        if (this.performanceMode === 'critical' ||
-            (this.fpsCounter && this.fpsCounter.value < 30)) {
-            return;
-        }
-
         // Configure appearance based on type
         let textColor, text;
         if (type === 'gold') {
@@ -3090,101 +3061,8 @@ export class Game {
         }, 8000);
     }
 
-    // Check performance and adjust settings dynamically
-    checkPerformance() {
-        // Only check periodically to avoid overhead
-        if (this.frameCount % this.performanceCheckInterval !== 0) {
-            return;
-        }
-
-        const now = performance.now();
-        const elapsed = now - this.lastPerformanceUpdate;
-        this.lastPerformanceUpdate = now;
-
-        // If we're checking every 60 frames, elapsed time should be ~1 second
-        // Calculate the actual FPS
-        const actualFPS = this.performanceCheckInterval / (elapsed / 1000);
-
-        // Store the FPS value
-        this.actualFPS = actualFPS;
-
-        // Set performance mode based on FPS
-        if (actualFPS < 15) { // Critically low performance
-            if (this.performanceMode !== 'critical') {
-                console.log('Critical performance mode activated');
-                this.performanceMode = 'critical';
-
-                // Apply extreme optimizations
-                this.lowQualityMode = true;
-
-                // Drastically reduce particles
-                this.maxParticles = 5;
-
-                // Reduce number of enemies allowed on screen
-                this.maxActiveEnemies = 50;
-
-                // Reduce projectiles
-                this.maxActiveProjectiles = 20;
-
-                // Tell renderer to use minimal quality settings
-                if (this.renderer.setQualityLevel) {
-                    this.renderer.setQualityLevel('critical');
-                }
-            }
-        } else if (actualFPS < 30) { // Low performance
-            if (this.performanceMode !== 'low') {
-                console.log('Low performance mode activated');
-                this.performanceMode = 'low';
-
-                // Apply standard optimizations
-                this.lowQualityMode = true;
-
-                // Reduce particles
-                this.maxParticles = 20;
-
-                // Other performance settings
-                this.enemyUpdateSkipRate = 2;
-
-                // Tell renderer to use low quality settings
-                if (this.renderer.setQualityLevel) {
-                    this.renderer.setQualityLevel('low');
-                }
-            }
-        } else if (actualFPS > 45 && this.performanceMode !== 'normal') {
-            // Return to normal quality when FPS recovers
-            console.log('Normal performance mode activated');
-            this.performanceMode = 'normal';
-            this.lowQualityMode = false;
-            this.maxParticles = 200;
-            this.enemyUpdateSkipRate = 3;
-
-            // Reset enemy and projectile limits
-            this.maxActiveEnemies = 150;
-            this.maxActiveProjectiles = 100;
-
-            // Tell renderer to use normal quality settings
-            if (this.renderer.setQualityLevel) {
-                this.renderer.setQualityLevel('normal');
-            }
-        }
-    }
-
     // Update a method to handle adding animation effects to the centralized system
     addAnimationEffect(animationConfig) {
-        // Skip adding animations in critical performance mode
-        if (this.performanceMode === 'critical' && Math.random() > 0.3) {
-            // Only add 30% of animations in critical mode
-            return -1; // Return -1 to indicate animation was skipped
-        }
-
-        // Skip non-essential animations in low performance mode (based on type if specified)
-        if (this.performanceMode === 'low' &&
-            animationConfig.type === 'decorative' &&
-            Math.random() > 0.6) {
-            // Only add 60% of decorative animations in low mode
-            return -1;
-        }
-
         const id = this.animationIdCounter++;
         this.animations.push({
             id,
@@ -3196,15 +3074,6 @@ export class Game {
 
     // Add a new method to update all animations
     updateAnimations(currentTime) {
-        // Skip animation updates occasionally in critical performance mode
-        if (this.performanceMode === 'critical' && this.frameCount % 2 !== 0) {
-            return; // Skip every other frame
-        }
-
-        // Limit max animations in low performance
-        const maxAnimations = this.performanceMode === 'critical' ? 10 :
-                            (this.performanceMode === 'low' ? 30 : 100);
-
         if (this.animations.length > maxAnimations) {
             // Remove oldest animations to stay under the limit
             this.animations = this.animations.slice(this.animations.length - maxAnimations);
