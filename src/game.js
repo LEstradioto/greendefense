@@ -231,8 +231,8 @@ export class Game {
         if (this.map.path && Array.isArray(this.map.path) && this.map.path.length > 0) {
         // Start the first wave after a short delay
         setTimeout(() => {
-                this.startWave();
-            }, 3000);
+                this.startCountdown(20);
+            }, 1000);
         } else {
             console.error("Cannot start game wave - map path is not properly initialized");
         }
